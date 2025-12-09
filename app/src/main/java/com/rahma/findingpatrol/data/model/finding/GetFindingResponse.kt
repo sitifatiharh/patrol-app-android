@@ -23,3 +23,4 @@ data class Finding(
     @SerializedName ("priority_name") val priorityName: String,
     @SerializedName ("card_image") val cardImage: String
 )
+

@@ -19,18 +19,22 @@ class AuthRepository(
         return response
     }
 
-    suspend fun refreshToken(refreshToken: String): Boolean {
-        val response = api.refresh(RefreshRequest(refreshToken))
-        if (response.isSuccessful) {
-            response.body()?.data?.accessToken?.let { newToken ->
-                dataStore.saveTokens(newToken, refreshToken)
-                return true
-            }
-        }
-        return false
-    }
-
     suspend fun me() = api.me()
+    
+    suspend fun fetchAndSaveUser(): Boolean {
+        return try {
+            val response = api.me()
+            if (response.isSuccessful && response.body() != null) {
+                val data = response.body()!!.data
+                dataStore.saveUser(data.userId, data.role)
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
 
     suspend fun logout() {
         dataStore.clear()

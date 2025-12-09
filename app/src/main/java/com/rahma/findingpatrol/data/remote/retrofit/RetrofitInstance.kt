@@ -3,8 +3,8 @@ package com.rahma.findingpatrol.data.remote.retrofit
 import com.rahma.findingpatrol.data.local.DataStoreManager
 import com.rahma.findingpatrol.data.remote.api.AuthApi
 import com.rahma.findingpatrol.data.remote.api.DashboardApi
-//import com.rahma.findingpatrol.data.remote.api.FindingApi
-//import com.rahma.findingpatrol.data.remote.api.MetadataApi
+import com.rahma.findingpatrol.data.remote.api.FindingApi
+import com.rahma.findingpatrol.data.remote.api.MetadataApi
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -64,6 +64,6 @@ object RetrofitInstance {
         return false
     }
     val dashboardApi: DashboardApi by lazy { retrofit.create(DashboardApi::class.java) }
-//    val findingApi: FindingApi by lazy { retrofit.create(FindingApi::class.java) }
-//    val metadataApi: MetadataApi by lazy { retrofit.create(MetadataApi::class.java) }
+    val findingApi: FindingApi by lazy { retrofit.create(FindingApi::class.java) }
+    val metadataApi: MetadataApi by lazy { retrofit.create(MetadataApi::class.java) }
 }

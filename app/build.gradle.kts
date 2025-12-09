@@ -29,6 +29,9 @@ android {
     }
 
     compileOptions {
+        // Aktifkan desugaring agar LocalDate jalan di Android < 8.0
+        isCoreLibraryDesugaringEnabled = true
+        
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -43,6 +46,9 @@ android {
 }
 
 dependencies {
+    // Desugaring Lib
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
+
     // Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -60,6 +66,9 @@ dependencies {
     // ViewModel Navigation Compose
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.navigation.compose)
+
+    // Coil (Image Loading)
+    implementation(libs.coil.compose)
 
     // Retrofit & Networking
     implementation(libs.retrofit)

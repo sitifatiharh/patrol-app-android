@@ -18,7 +18,13 @@ class LoginViewModel(private val repo: AuthRepository) : ViewModel() {
                 try {
                     val response: Response<LoginResponse> = repo.login(username, password)
                     if (response.isSuccessful && response.body() != null) {
-                        Pair(true, "Login berhasil")
+                        // After login, fetch and save user details
+                        val userFetched = repo.fetchAndSaveUser()
+                        if (userFetched) {
+                            Pair(true, "Login berhasil")
+                        } else {
+                            Pair(true, "Login berhasil (Gagal memuat profil)")
+                        }
                     } else {
                         Pair(false, response.errorBody()?.string() ?: "Login gagal")
                     }
