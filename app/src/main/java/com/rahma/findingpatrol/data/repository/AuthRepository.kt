@@ -20,13 +20,14 @@ class AuthRepository(
     }
 
     suspend fun me() = api.me()
-    
+
     suspend fun fetchAndSaveUser(): Boolean {
         return try {
             val response = api.me()
             if (response.isSuccessful && response.body() != null) {
                 val data = response.body()!!.data
-                dataStore.saveUser(data.userId, data.role)
+                // Passes all required fields to the updated saveUser function
+                dataStore.saveUser(data.userId, data.role, data.sectionId, data.section)
                 true
             } else {
                 false

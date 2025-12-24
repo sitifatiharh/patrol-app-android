@@ -1,21 +1,21 @@
 package com.rahma.findingpatrol
 
+import android.net.Uri
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.material3.Surface
-import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.rahma.findingpatrol.data.local.DataStoreManager
+import com.rahma.findingpatrol.data.remote.ApiConfig
 import com.rahma.findingpatrol.data.remote.retrofit.RetrofitInstance
 import com.rahma.findingpatrol.data.repository.AuthRepository
 import com.rahma.findingpatrol.data.repository.DashboardRepository
@@ -23,17 +23,15 @@ import com.rahma.findingpatrol.data.repository.FindingRepository
 import com.rahma.findingpatrol.data.repository.MetadataRepository
 import com.rahma.findingpatrol.ui.auth.LoginScreen
 import com.rahma.findingpatrol.ui.dashboard.DashboardScreen
-import com.rahma.findingpatrol.ui.finding.FindingDetailScreen
-import com.rahma.findingpatrol.ui.finding.ImprovementActionScreen
-import com.rahma.findingpatrol.ui.finding.NewEditFindingScreen
-import com.rahma.findingpatrol.ui.finding.PicScreen
-import com.rahma.findingpatrol.viewmodel.dashboard.DashboardViewModel
+import com.rahma.findingpatrol.ui.debug.ImageDebugScreen
+import com.rahma.findingpatrol.ui.finding.*
+import com.rahma.findingpatrol.ui.theme.FindingPatrolTheme
 import com.rahma.findingpatrol.viewmodel.auth.LoginViewModel
+import com.rahma.findingpatrol.viewmodel.dashboard.DashboardViewModel
 import com.rahma.findingpatrol.viewmodel.finding.CreateFindingViewModel
 import com.rahma.findingpatrol.viewmodel.finding.FindingDetailViewModel
+import com.rahma.findingpatrol.viewmodel.finding.FindingHistoryViewModel
 import com.rahma.findingpatrol.viewmodel.metadata.MetadataViewModel
-import com.rahma.findingpatrol.ui.theme.FindingPatrolTheme
-
 
 class MainActivity : ComponentActivity() {
 
@@ -49,6 +47,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var createFindingViewModel: CreateFindingViewModel
     private lateinit var findingDetailViewModel: FindingDetailViewModel
     private lateinit var metadataViewModel: MetadataViewModel
+    private lateinit var findingHistoryViewModel: FindingHistoryViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,28 +55,33 @@ class MainActivity : ComponentActivity() {
         // DataStore
         dataStore = DataStoreManager(this)
 
-        RetrofitInstance.init("http://192.17.102.221:3000/kaizen/", dataStore)
+        // Init Retrofit with centralized URL
+        RetrofitInstance.init(ApiConfig.BASE_URL + "/kaizen/", dataStore)
 
-        // Gunakan instance API yang sudah disediakan oleh RetrofitInstance (Konsisten & Menghilangkan Warning)
+        // Repositories
         authRepository = AuthRepository(RetrofitInstance.authApi, dataStore)
         findingRepository = FindingRepository(RetrofitInstance.findingApi)
         dashboardRepository = DashboardRepository(RetrofitInstance.dashboardApi)
         metadataRepository = MetadataRepository(RetrofitInstance.metadataApi)
         
+        // ViewModels
         loginViewModel = LoginViewModel(authRepository)
-        dashboardViewModel = DashboardViewModel(dashboardRepository, findingRepository)
+        dashboardViewModel = DashboardViewModel(dashboardRepository, findingRepository, dataStore)
         createFindingViewModel = CreateFindingViewModel(findingRepository)
         findingDetailViewModel = FindingDetailViewModel(findingRepository)
         metadataViewModel = MetadataViewModel(metadataRepository)
+        findingHistoryViewModel = FindingHistoryViewModel(findingRepository, metadataRepository)
 
         enableEdgeToEdge()
 
         setContent {
             FindingPatrolTheme {
                 Surface {
-                    // Read Role and User ID from DataStore
                     val userRole by dataStore.getUserRoleFlow().collectAsState(initial = "")
                     val userId by dataStore.getUserIdFlow().collectAsState(initial = -1)
+                    val userMode by dataStore.getUserModeFlow().collectAsState(initial = "patrol")
+                    val sectionId by dataStore.getUserSectionIdFlow().collectAsState(initial = -1)
+                    val sectionName by dataStore.getUserSectionNameFlow().collectAsState(initial = "")
 
                     AppNavigation(
                         loginViewModel = loginViewModel,
@@ -85,8 +89,12 @@ class MainActivity : ComponentActivity() {
                         createFindingViewModel = createFindingViewModel,
                         findingDetailViewModel = findingDetailViewModel,
                         metadataViewModel = metadataViewModel,
+                        findingHistoryViewModel = findingHistoryViewModel,
                         userRole = userRole,
-                        userId = userId
+                        userId = userId,
+                        userMode = userMode,
+                        sectionId = sectionId,
+                        sectionName = sectionName
                     )
                 }
             }
@@ -101,13 +109,14 @@ fun AppNavigation(
     createFindingViewModel: CreateFindingViewModel,
     findingDetailViewModel: FindingDetailViewModel,
     metadataViewModel: MetadataViewModel,
+    findingHistoryViewModel: FindingHistoryViewModel,
     userRole: String,
-    userId: Int
+    userId: Int,
+    userMode: String,
+    sectionId: Int,
+    sectionName: String
 ) {
     val navController = rememberNavController()
-    val context = LocalContext.current
-    
-    // User Role is now passed dynamically from MainActivity
 
     NavHost(navController = navController, startDestination = "login") {
         composable("login") {
@@ -124,16 +133,65 @@ fun AppNavigation(
         composable("dashboard") {
             DashboardScreen(
                 viewModel = dashboardViewModel,
+                userId = userId,
+                userRole = userRole,
+                userMode = userMode,
+                sectionId = sectionId,
+                sectionName = sectionName,
                 onNavigateToProfile = { /* TODO */ },
-                onNavigateToFindings = { navController.navigate("history") },
+                onNavigateToFindings = { navController.navigate("findingHistory") },
                 onNavigateToCreateFinding = { navController.navigate("createFinding") },
+                onNavigateToDetail = { findingId ->
+                    navController.navigate("findingDetail/$findingId")
+                },
+                onNavigateToDebug = { navController.navigate("debug_image") },
+                onNavigateToFindingStats = { statusId, statusName, mode ->
+                    navController.navigate("findingStats/$statusId/$statusName/$mode")
+                }
+            )
+        }
+        
+        composable("findingHistory") {
+            FindingHistoryScreen(
+                viewModel = findingHistoryViewModel,
+                userId = userId,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToDetail = { findingId ->
+                    navController.navigate("findingDetail/$findingId")
+                }
+            )
+        }
+
+        composable(
+            route = "findingStats/{statusId}/{statusName}/{userMode}",
+            arguments = listOf(
+                navArgument("statusId") { type = NavType.IntType },
+                navArgument("statusName") { type = NavType.StringType },
+                navArgument("userMode") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val statusId = backStackEntry.arguments?.getInt("statusId") ?: 0
+            val statusName = backStackEntry.arguments?.getString("statusName") ?: ""
+            val mode = backStackEntry.arguments?.getString("userMode") ?: "patrol"
+            FindingStatsScreen(
+                viewModel = findingHistoryViewModel,
+                initialStatusId = statusId,
+                initialStatusName = statusName,
+                userId = userId,
+                userRole = userRole,
+                sectionId = sectionId,
+                userMode = mode,
+                onNavigateBack = { navController.popBackStack() },
                 onNavigateToDetail = { findingId ->
                     navController.navigate("findingDetail/$findingId")
                 }
             )
         }
         
-        // Form 1 & 2 (Create & Patrol/PIC Edit Open)
+        composable("debug_image") { 
+            ImageDebugScreen { navController.popBackStack() }
+        }
+
         composable(
             route = "createFinding?findingId={findingId}",
             arguments = listOf(
@@ -149,11 +207,26 @@ fun AppNavigation(
                 metadataViewModel = metadataViewModel,
                 findingDetailViewModel = findingDetailViewModel,
                 findingId = findingId,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                navController = navController,
+                onNavigateToDetail = { id ->
+                    navController.navigate("findingDetail/$id") {
+                        popUpTo("dashboard")
+                    }
+                }
             )
         }
 
-        // Form 3, 5, 6 (Improvement Action - All Statuses)
+        composable("camera") {
+            CameraScreen(
+                onImageCaptured = { uri: Uri ->
+                    navController.previousBackStackEntry?.savedStateHandle?.set("new_image", uri)
+                    navController.popBackStack()
+                },
+                onClose = { navController.popBackStack() }
+            )
+        }
+
         composable(
             route = "improvementAction/{findingId}",
             arguments = listOf(navArgument("findingId") { type = NavType.IntType })
@@ -161,26 +234,27 @@ fun AppNavigation(
             val findingId = backStackEntry.arguments?.getInt("findingId") ?: 0
             
             ImprovementActionScreen(
+                navController = navController, // Pass NavController here
                 viewModel = createFindingViewModel,
                 metadataViewModel = metadataViewModel,
                 findingDetailViewModel = findingDetailViewModel,
                 onNavigateBack = { navController.popBackStack() },
-                findingId = findingId,
-                currentUserId = userId // Dynamic
+                findingId = findingId
             )
         }
         
-        // Form 4 (PIC Resolve)
         composable(
             route = "resolveFinding/{findingId}",
             arguments = listOf(navArgument("findingId") { type = NavType.IntType })
         ) { backStackEntry ->
             val findingId = backStackEntry.arguments?.getInt("findingId") ?: 0
             PicScreen(
+                navController = navController, // Pass NavController here
                 viewModel = createFindingViewModel,
+                findingDetailViewModel = findingDetailViewModel,
                 onNavigateBack = { navController.popBackStack() },
                 findingId = findingId,
-                isOverdue = false // Bisa fetch detail kalau perlu logic overdue
+                isOverdue = false
             )
         }
 
@@ -192,8 +266,10 @@ fun AppNavigation(
             FindingDetailScreen(
                 viewModel = findingDetailViewModel,
                 findingId = findingId,
-                userRole = userRole, // Dynamic
-                currentUserId = userId, // Dynamic
+                userRole = userRole,
+                userMode = userMode,
+                currentUserId = userId,
+                sectionId = sectionId,
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToImprovementAction = { id ->
                     navController.navigate("improvementAction/$id")

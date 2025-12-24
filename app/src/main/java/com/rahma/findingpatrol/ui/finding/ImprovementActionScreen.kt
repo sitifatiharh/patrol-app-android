@@ -4,70 +4,68 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.rahma.findingpatrol.data.model.metadata.Category
-import com.rahma.findingpatrol.ui.components.FormImagePicker
-import com.rahma.findingpatrol.ui.components.FormRow
-import com.rahma.findingpatrol.ui.components.MetadataDropdown
+import androidx.navigation.NavController
+import com.rahma.findingpatrol.ui.components.DeleteConfirmationDialog
+import com.rahma.findingpatrol.ui.components.FullScreenImageViewer
+import com.rahma.findingpatrol.ui.components.ImageSourceSelectionDialog
+import com.rahma.findingpatrol.ui.metadata.FormImagePicker
+import com.rahma.findingpatrol.ui.metadata.FormRow
+import com.rahma.findingpatrol.ui.metadata.FormSection
+import com.rahma.findingpatrol.ui.metadata.MetadataDropdown
+import com.rahma.findingpatrol.util.fixImageUrl
 import com.rahma.findingpatrol.viewmodel.finding.CreateFindingViewModel
 import com.rahma.findingpatrol.viewmodel.finding.FindingDetailState
 import com.rahma.findingpatrol.viewmodel.finding.FindingDetailViewModel
-import com.rahma.findingpatrol.viewmodel.metadata.MetadataViewModel
 import com.rahma.findingpatrol.viewmodel.metadata.MetadataState
+import com.rahma.findingpatrol.viewmodel.metadata.MetadataViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ImprovementActionScreen(
+    navController: NavController,
     viewModel: CreateFindingViewModel,
     metadataViewModel: MetadataViewModel,
     findingDetailViewModel: FindingDetailViewModel,
     onNavigateBack: () -> Unit,
-    findingId: Int,
-    currentUserId: Int // Passed to determine Creator logic
+    findingId: Int
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    // --- State Variables ---
-    // 1. Finding Details (Group 1)
-    var findingText by remember { mutableStateOf("") }
-    var areaText by remember { mutableStateOf("") }
-    var selectedPatrol by remember { mutableStateOf<com.rahma.findingpatrol.data.model.metadata.Patrol?>(null) }
-    var selectedFindingImages by remember { mutableStateOf<List<Uri>>(emptyList()) } // New images to add
-    
-    // 2. Assignment (Group 2)
-    var selectedPic by remember { mutableStateOf<com.rahma.findingpatrol.data.model.metadata.Pic?>(null) }
-    
-    // 3. Metadata (Group 3)
-    var selectedPriority by remember { mutableStateOf<com.rahma.findingpatrol.data.model.metadata.Priority?>(null) }
-    var selectedRiskLevel by remember { mutableStateOf<com.rahma.findingpatrol.data.model.metadata.RiskLevel?>(null) }
-    var selectedFindingType by remember { mutableStateOf<com.rahma.findingpatrol.data.model.metadata.FindingType?>(null) }
-    var countermeasureText by remember { mutableStateOf("") } // Countermeasure suggestion? Or Action? 
-    // User listed "countermeasure". In Form 6/Improvement context, it's usually "Countermeasure Suggestion" or "Action"? 
-    // Let's assume Suggestion for now, or both. But `updateFinding` has fields for both.
-    // Based on "Form 3... finding, area, patrol, foto... pic, priority...". Usually Form 3 has Suggestion.
-    // Form 6 has everything.
-    // I'll stick to "Countermeasure Suggestion" as editable metadata.
-    
-    // 4. Closing (Group 4)
-    var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    
-    // 5. Improvement Photos (Group 5)
-    var selectedImproveImages by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    // --- State Variables (using rememberSaveable) ---
+    var findingText by rememberSaveable { mutableStateOf("") }
+    var areaText by rememberSaveable { mutableStateOf("") }
+    var countermeasureText by rememberSaveable { mutableStateOf("") }
+
+    var selectedPatrolId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var selectedPicId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var selectedPriorityId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var selectedRiskLevelId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var selectedFindingTypeId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var selectedCategoryId by rememberSaveable { mutableStateOf<Int?>(null) }
+
+    // --- Image States ---
+    var newFindingImages by rememberSaveable { mutableStateOf<List<Uri>>(emptyList()) }
+    var existingFindingImages by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var newImprovedImages by rememberSaveable { mutableStateOf<List<Uri>>(emptyList()) }
+    var existingImprovedImages by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+
+    // --- UI State ---
+    var showImageSourceDialog by remember { mutableStateOf<String?>(null) } // "finding" or "improved"
+    var showDeleteDialog by remember { mutableStateOf<Pair<String, Any>?>(null) } // Pair of type and image
+    var showImageViewer by remember { mutableStateOf<Pair<String, Int>?>(null) } // Pair of type and index
 
     // Dropdown Expanded
     var patrolExpanded by remember { mutableStateOf(false) }
@@ -80,7 +78,18 @@ fun ImprovementActionScreen(
     // Load Data
     val metadataState by metadataViewModel.metadataState.collectAsState()
     val detailState by findingDetailViewModel.state.collectAsState()
-    
+
+    val metadataData = (metadataState as? MetadataState.Success)?.data
+    val patrols = metadataData?.patrol ?: emptyList()
+    val pics = metadataData?.pics ?: emptyList()
+    val priorities = metadataData?.priority ?: emptyList()
+    val risks = metadataData?.riskLevel ?: emptyList()
+    val types = metadataData?.findingType ?: emptyList()
+    val categories = metadataData?.category ?: emptyList()
+
+    // Pre-fill
+    var statusName by remember { mutableStateOf("") }
+
     LaunchedEffect(Unit) {
         metadataViewModel.loadMetadata()
         viewModel.resetState()
@@ -88,48 +97,121 @@ fun ImprovementActionScreen(
             findingDetailViewModel.getFindingDetail(findingId)
         }
     }
-    
-    // Pre-fill
-    var statusName by remember { mutableStateOf("") }
-    var isCreator by remember { mutableStateOf(false) }
 
-    LaunchedEffect(metadataState, detailState) {
-        if (detailState is FindingDetailState.Success && metadataState is MetadataState.Success) {
-            val data = (metadataState as MetadataState.Success).data
+    LaunchedEffect(detailState, metadataData) {
+        if (detailState is FindingDetailState.Success && metadataData != null) {
             val detail = (detailState as FindingDetailState.Success).data
-            
             statusName = detail.statusName.uppercase()
-            // isCreator = detail.userId == currentUserId // Need userId in Detail. 
-            // For now, assume passed logic or mock true for testing "creator" flow if Open.
-            isCreator = true // Mocking true to enable testing "Creator Edit" flow. Replace with real logic.
 
-            findingText = detail.finding
-            areaText = detail.area
-            countermeasureText = detail.countermeasureSuggestion ?: ""
-            
-            selectedPatrol = data.patrol.find { it.patrolName == detail.patrolName }
-            selectedPic = data.pics.find { it.sectionName == detail.picName }
-            selectedPriority = data.priority.find { it.priorityName == detail.priorityName }
-            selectedRiskLevel = data.riskLevel.find { it.riskLevel == detail.riskLevelName }
-            selectedFindingType = data.findingType.find { it.typeName == detail.findingTypeName }
-            selectedCategory = data.category.find { it.categoryName == detail.categoryName }
+            if (findingText.isEmpty()) findingText = detail.finding
+            if (areaText.isEmpty()) areaText = detail.area
+            if (countermeasureText.isEmpty()) countermeasureText =
+                detail.countermeasureSuggestion ?: ""
+
+            if (selectedPatrolId == null) selectedPatrolId =
+                patrols.find { it.patrolName == detail.patrolName }?.patrolId
+            if (selectedPicId == null) selectedPicId =
+                pics.find { it.sectionName == detail.picName }?.sectionId
+            if (selectedPriorityId == null) selectedPriorityId =
+                priorities.find { it.priorityName == detail.priorityName }?.priorityId
+            if (selectedRiskLevelId == null) selectedRiskLevelId =
+                risks.find { it.riskLevel == detail.riskLevelName }?.riskLevelId
+            if (selectedFindingTypeId == null) selectedFindingTypeId =
+                types.find { it.typeName == detail.findingTypeName }?.findingTypeId
+            if (selectedCategoryId == null) selectedCategoryId =
+                categories.find { it.categoryName == detail.categoryName }?.categoryId
+
+            if (existingFindingImages.isEmpty()) {
+                existingFindingImages =
+                    detail.images.filter { it.imageType == "finding" }.map { fixImageUrl(it.imageUrl) }
+            }
+
+            if (existingImprovedImages.isEmpty()) {
+                existingImprovedImages =
+                    detail.images.filter { it.imageType == "improved" }.map { fixImageUrl(it.imageUrl) }
+            }
         }
+    }
+
+    // --- Image Launchers & Handlers ---
+    val galleryLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris: List<Uri> ->
+            if (uris.isNotEmpty()) {
+                val target = showImageSourceDialog
+                val currentUris = if (target == "finding") newFindingImages else newImprovedImages
+                val updatedUris = (currentUris + uris).distinct()
+                if (target == "finding") newFindingImages = updatedUris else newImprovedImages =
+                    updatedUris
+                showImageSourceDialog = null
+            }
+        }
+
+    val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
+    val newCameraImage = savedStateHandle?.getStateFlow<Uri?>("new_image", null)?.collectAsState()?.value
+
+    LaunchedEffect(newCameraImage) {
+        newCameraImage?.let {
+            val target = showImageSourceDialog
+            val currentUris = if (target == "finding") newFindingImages else newImprovedImages
+            val updatedUris = (currentUris + it).distinct()
+            if (target == "finding") newFindingImages = updatedUris else newImprovedImages =
+                updatedUris
+            savedStateHandle.remove<Uri>("new_image")
+            showImageSourceDialog = null
+        }
+    }
+
+    // --- Dialogs ---
+    if (showImageSourceDialog != null) {
+        ImageSourceSelectionDialog(
+            onDismiss = { showImageSourceDialog = null },
+            onCameraClick = {
+                navController.navigate("camera")
+            },
+            onGalleryClick = {
+                galleryLauncher.launch("image/*")
+            }
+        )
+    }
+
+    if (showDeleteDialog != null) {
+        DeleteConfirmationDialog(
+            onConfirm = {
+                val (type, image) = showDeleteDialog!!
+                if (type == "finding") {
+                    if (image is Uri) newFindingImages =
+                        newFindingImages - image else existingFindingImages =
+                        existingFindingImages - (image as String)
+                } else {
+                    if (image is Uri) newImprovedImages =
+                        newImprovedImages - image else existingImprovedImages =
+                        existingImprovedImages - (image as String)
+                }
+                showDeleteDialog = null
+            },
+            onDismiss = { showDeleteDialog = null }
+        )
+    }
+
+    if (showImageViewer != null) {
+        val (type, index) = showImageViewer!!
+        val allImages =
+            if (type == "finding") (existingFindingImages + newFindingImages) else (existingImprovedImages + newImprovedImages)
+        FullScreenImageViewer(
+            images = allImages.map<Any, Any> { it },
+            initialIndex = index,
+            onDismiss = { showImageViewer = null },
+            onDelete = { image -> showDeleteDialog = Pair(type, image) }
+        )
     }
 
     // Logic Enable/Disable
     val isOpen = statusName == "OPEN"
-    val isAssigned = statusName == "ASSIGNED"
     val isReady = statusName == "READY FOR RECHECK"
     val isClosed = statusName == "CLOSED"
 
-    val canEditDetails = (isOpen && isCreator) // Only Open & Creator can edit Finding/Area/Patrol/Photos
-    val canEditCategory = isReady || isClosed // Enable Category only in Ready or Closed
-    val canEditPic = true // PIC always editable for Improvement? "Status open... ubah status ke assigned kalau pic diisi". "Status assigned dia bisa edit". So Yes.
-    val canEditMetadata = true // Priority/Risk/Type always editable for Improvement (Form 6 logic)
-
-    // Image Pickers
-    val findingImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { selectedFindingImages = it }
-    val improveImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { selectedImproveImages = it }
+    val canEditDetails = isOpen
+    val canEditCategory = isReady || isClosed
 
     // Submit Logic
     val loading by viewModel.loading.collectAsState()
@@ -138,153 +220,181 @@ fun ImprovementActionScreen(
 
     LaunchedEffect(success) {
         if (success) {
-            Toast.makeText(context, "Action successful!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Aksi berhasil disimpan!", Toast.LENGTH_SHORT).show()
             onNavigateBack()
         }
     }
     LaunchedEffect(error) { error?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } }
 
     Scaffold(
-        bottomBar = { Box(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) }
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = { Text("Improvement Action ($statusName)") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            Icons.Default.Close,
+                            "Close"
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .padding(paddingValues)
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(horizontal = 16.dp)
                 .verticalScroll(scrollState)
         ) {
-            // Header
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                 Spacer(modifier = Modifier.weight(1f))
-                 IconButton(onClick = onNavigateBack) {
-                     Icon(imageVector = Icons.Default.Close, contentDescription = "Close")
-                 }
-            }
-            
-            Text(
-                text = "Improvement Action ($statusName)",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Black
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Buttons
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                Button(onClick = onNavigateBack, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE0E0E0), contentColor = Color.Black)) { Text("Batal") }
-                Spacer(modifier = Modifier.width(16.dp))
-                Button(
-                    onClick = {
-                        // Validation
-                        if (isOpen && selectedPic == null) {
-                             Toast.makeText(context, "Please Assign PIC to proceed", Toast.LENGTH_SHORT).show()
-                        } else if (isReady && selectedCategory == null) {
-                             Toast.makeText(context, "Please select Category to Close", Toast.LENGTH_SHORT).show()
-                        } else {
-                            // Update
-                            viewModel.updateFinding(
-                                context = context,
-                                id = findingId,
-                                finding = findingText,
-                                area = areaText,
-                                patrolId = selectedPatrol?.patrolId ?: 0,
-                                picId = selectedPic?.sectionId,
-                                priorityId = selectedPriority?.priorityId,
-                                riskLevelId = selectedRiskLevel?.riskLevelId,
-                                findingTypeId = selectedFindingType?.findingTypeId,
-                                categoryId = selectedCategory?.categoryId,
-                                countermeasureSuggestion = countermeasureText,
-                                imageUris = selectedFindingImages // Appending finding images
-                                // improveImages logic? CreateFindingViewModel assumes 'imageUris' are Finding images.
-                                // If we need to upload Improve images, we might need a separate API call or VM update.
-                                // For now, sending finding images.
-                            )
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD7E8CD), contentColor = Color.Black),
-                    enabled = !loading
-                ) {
-                    val btnText = when {
-                        isOpen -> "Assign"
-                        isReady -> "Close Finding"
-                        else -> "Update"
-                    }
-                    if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp)) else Text(btnText)
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            Divider()
-            Spacer(modifier = Modifier.height(16.dp))
 
-            // --- SECTION 1: Finding Details ---
-            Text("Finding Details", fontWeight = FontWeight.Bold, color = Color.Gray)
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            FormRow("Finding" + if (canEditDetails) " *" else "", {
-                OutlinedTextField(
-                    value = findingText, onValueChange = { if (canEditDetails) findingText = it },
-                    modifier = Modifier.fillMaxWidth(), readOnly = !canEditDetails, enabled = canEditDetails
+            // Finding Details
+            FormSection(title = "Finding Details") {
+                FormRow("Finding", {
+                    OutlinedTextField(
+                        value = findingText,
+                        onValueChange = { if (canEditDetails) findingText = it },
+                        readOnly = !canEditDetails,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                })
+                FormRow("Area", {
+                    OutlinedTextField(
+                        value = areaText,
+                        onValueChange = { if (canEditDetails) areaText = it },
+                        readOnly = !canEditDetails,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                })
+                FormRow("Patrol", {
+                    MetadataDropdown(
+                        label = "Select Patrol",
+                        options = patrols,
+                        selectedOption = patrols.find { it.patrolId == selectedPatrolId },
+                        onOptionSelected = { selectedPatrolId = it.patrolId },
+                        itemLabel = { it.patrolName },
+                        expanded = patrolExpanded,
+                        onExpandedChange = { patrolExpanded = it },
+                        enabled = canEditDetails
+                    )
+                })
+                FormImagePicker(
+                    label = "Finding Photos",
+                    selectedImageUris = newFindingImages,
+                    existingImages = existingFindingImages,
+                    onPickImage = { showImageSourceDialog = "finding" },
+                    onRemoveImage = { uri -> showDeleteDialog = Pair("finding", uri) },
+                    onRemoveExisting = { url -> showDeleteDialog = Pair("finding", url) },
+                    placeholderText = "Add finding photos",
+                    enabled = canEditDetails
                 )
-            })
-            FormRow("Area" + if (canEditDetails) " *" else "", {
-                OutlinedTextField(
-                    value = areaText, onValueChange = { if (canEditDetails) areaText = it },
-                    modifier = Modifier.fillMaxWidth(), readOnly = !canEditDetails, enabled = canEditDetails
-                )
-            })
-            FormRow("Patrol" + if (canEditDetails) " *" else "", {
-                MetadataDropdown("Select Patrol", (metadataState as? MetadataState.Success)?.data?.patrol ?: emptyList(), selectedPatrol, { selectedPatrol = it }, { it.patrolName }, patrolExpanded, { patrolExpanded = it }, enabled = canEditDetails)
-            })
-            
-            var phText = "IMG.png"
-            if (detailState is FindingDetailState.Success) {
-                 val detail = (detailState as FindingDetailState.Success).data
-                 val count = detail.images.count { it.imageType == "finding" }
-                 if (count > 0) phText = "$count existing photos"
             }
-            FormImagePicker("Finding Photos", selectedFindingImages, { findingImageLauncher.launch("image/*") }, placeholderText = phText, enabled = canEditDetails)
 
-            Spacer(modifier = Modifier.height(16.dp))
-            Divider()
-            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
-            // --- SECTION 2: Assignment & Metadata ---
-            Text("Assignment & Metadata", fontWeight = FontWeight.Bold, color = Color.Gray)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            FormRow("PIC" + if (isOpen) " *" else "", {
-                MetadataDropdown("Select PIC", (metadataState as? MetadataState.Success)?.data?.pics ?: emptyList(), selectedPic, { selectedPic = it }, { it.sectionName }, picExpanded, { picExpanded = it }, enabled = canEditPic)
-            })
-            
-            FormRow("Priority", {
-                MetadataDropdown("Select Priority", (metadataState as? MetadataState.Success)?.data?.priority ?: emptyList(), selectedPriority, { selectedPriority = it }, { it.priorityName }, priorityExpanded, { priorityExpanded = it }, enabled = canEditMetadata)
-            })
-            
-            FormRow("Risk Level", {
-                MetadataDropdown("Select Risk", (metadataState as? MetadataState.Success)?.data?.riskLevel ?: emptyList(), selectedRiskLevel, { selectedRiskLevel = it }, { it.riskLevel }, riskExpanded, { riskExpanded = it }, enabled = canEditMetadata)
-            })
-             FormRow("Type", {
-                MetadataDropdown("Select Type", (metadataState as? MetadataState.Success)?.data?.findingType ?: emptyList(), selectedFindingType, { selectedFindingType = it }, { it.typeName }, typeExpanded, { typeExpanded = it }, enabled = canEditMetadata)
-            })
-            FormRow("Suggestion", {
-                 OutlinedTextField(value = countermeasureText, onValueChange = { countermeasureText = it }, modifier = Modifier.fillMaxWidth().height(80.dp), enabled = canEditMetadata)
-            })
-
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // --- SECTION 3: Closing (Category) ---
-            if (isReady || isClosed) {
-                Divider()
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Closing", fontWeight = FontWeight.Bold, color = Color.Gray)
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                FormRow("Category" + if (isReady) " *" else "", {
-                    MetadataDropdown("Select Category", (metadataState as? MetadataState.Success)?.data?.category ?: emptyList(), selectedCategory, { selectedCategory = it }, { it.categoryName }, categoryExpanded, { categoryExpanded = it }, enabled = canEditCategory)
+            // Assignment & Metadata
+            FormSection(title = "Assignment & Metadata") {
+                FormRow("PIC" + if (isOpen) " *" else "", {
+                    MetadataDropdown(
+                        label = "Select PIC",
+                        options = pics,
+                        selectedOption = pics.find { it.sectionId == selectedPicId },
+                        onOptionSelected = { selectedPicId = it.sectionId },
+                        itemLabel = { it.sectionName },
+                        expanded = picExpanded,
+                        onExpandedChange = { picExpanded = it },
+                        enabled = !isClosed
+                    )
+                })
+                FormRow("Priority", {
+                    MetadataDropdown(
+                        label = "Select Priority",
+                        options = priorities,
+                        selectedOption = priorities.find { it.priorityId == selectedPriorityId },
+                        onOptionSelected = { selectedPriorityId = it.priorityId },
+                        itemLabel = { it.priorityName },
+                        expanded = priorityExpanded,
+                        onExpandedChange = { priorityExpanded = it },
+                        enabled = !isClosed
+                    )
+                })
+                FormRow("Risk Level", {
+                    MetadataDropdown(
+                        label = "Select Risk",
+                        options = risks,
+                        selectedOption = risks.find { it.riskLevelId == selectedRiskLevelId },
+                        onOptionSelected = { selectedRiskLevelId = it.riskLevelId },
+                        itemLabel = { it.riskLevel },
+                        expanded = riskExpanded,
+                        onExpandedChange = { riskExpanded = it },
+                        enabled = !isClosed
+                    )
+                })
+                FormRow("Type", {
+                    MetadataDropdown(
+                        label = "Select Type",
+                        options = types,
+                        selectedOption = types.find { it.findingTypeId == selectedFindingTypeId },
+                        onOptionSelected = { selectedFindingTypeId = it.findingTypeId },
+                        itemLabel = { it.typeName },
+                        expanded = typeExpanded,
+                        onExpandedChange = { typeExpanded = it },
+                        enabled = !isClosed
+                    )
+                })
+                FormRow("Suggestion", {
+                    OutlinedTextField(
+                        value = countermeasureText,
+                        onValueChange = { countermeasureText = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp),
+                        readOnly = isClosed
+                    )
                 })
             }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+            // Improvement Photos
+            FormSection(title = "Improvement Photos") {
+                FormImagePicker(
+                    label = "Improved Photos",
+                    selectedImageUris = newImprovedImages,
+                    existingImages = existingImprovedImages,
+                    onPickImage = { showImageSourceDialog = "improved" },
+                    onRemoveImage = { uri -> showDeleteDialog = Pair("improved", uri) },
+                    onRemoveExisting = { url -> showDeleteDialog = Pair("improved", url) },
+                    placeholderText = "Add improved photos",
+                    enabled = !isClosed
+                )
+            }
+
+            // Closing
+            if (isReady || isClosed) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+                FormSection("Closing") {
+                    FormRow(
+                        "Category" + if (isReady) " *" else "",
+                        {
+                            MetadataDropdown(
+                                label = "Select Category",
+                                options = categories,
+                                selectedOption = categories.find { it.categoryId == selectedCategoryId },
+                                onOptionSelected = { selectedCategoryId = it.categoryId },
+                                itemLabel = { it.categoryName },
+                                expanded = categoryExpanded,
+                                onExpandedChange = { categoryExpanded = it },
+                                enabled = canEditCategory
+                            )
+                        })
+                }
+            }
+
+            Spacer(modifier = Modifier.height(100.dp))
         }
     }
 }

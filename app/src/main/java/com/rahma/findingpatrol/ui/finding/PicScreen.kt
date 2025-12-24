@@ -4,32 +4,51 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.rahma.findingpatrol.R
-import com.rahma.findingpatrol.ui.components.FormImagePicker
-import com.rahma.findingpatrol.ui.components.FormRow
+import androidx.navigation.NavController
+import coil.compose.AsyncImage
+import com.rahma.findingpatrol.util.fixImageUrl
 import com.rahma.findingpatrol.viewmodel.finding.CreateFindingViewModel
+import com.rahma.findingpatrol.viewmodel.finding.FindingDetailState
+import com.rahma.findingpatrol.viewmodel.finding.FindingDetailViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PicScreen(
+    navController: NavController,
     viewModel: CreateFindingViewModel,
+    findingDetailViewModel: FindingDetailViewModel,
     onNavigateBack: () -> Unit,
     findingId: Int,
     isOverdue: Boolean = false
@@ -38,15 +57,110 @@ fun PicScreen(
     val scrollState = rememberScrollState()
 
     // State
-    var countermeasureText by remember { mutableStateOf("") }
-    var delayReasonText by remember { mutableStateOf("") }
-    var selectedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var countermeasureText by rememberSaveable { mutableStateOf("") }
+    var delayReasonText by rememberSaveable { mutableStateOf("") }
+    var selectedImageUris by rememberSaveable { mutableStateOf<List<Uri>>(emptyList()) }
+    var existingImages by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
 
-    // Image Picker
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
-    ) { uris: List<Uri> ->
-        selectedImageUris = uris
+    // UI State
+    var showImageSourceDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf<Any?>(null) } // Can be Uri or String
+    var showImageViewer by remember { mutableStateOf<Pair<List<Any>, Int>?>(null) }
+
+    // Data Loading
+    val detailState by findingDetailViewModel.state.collectAsState()
+    LaunchedEffect(Unit) {
+        if (findingId > 0) {
+            findingDetailViewModel.getFindingDetail(findingId)
+        }
+        viewModel.resetState()
+    }
+
+    LaunchedEffect(detailState) {
+        if (detailState is FindingDetailState.Success) {
+            val detail = (detailState as FindingDetailState.Success).data
+            if (countermeasureText.isEmpty()) {
+                countermeasureText = detail.countermeasure ?: ""
+            }
+            if (existingImages.isEmpty()) {
+                existingImages = detail.images
+                    .filter { it.imageType == "improved" }
+                    .map { fixImageUrl(it.imageUrl) }
+            }
+        }
+    }
+
+    // Image Launchers
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isNotEmpty()) {
+            val currentCount = selectedImageUris.size + existingImages.size
+            val availableSlots = 10 - currentCount
+            if (availableSlots > 0) {
+                selectedImageUris = (selectedImageUris + uris.take(availableSlots)).distinct()
+            } else {
+                Toast.makeText(context, "Maksimal 10 gambar", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
+    val newCameraImage = savedStateHandle?.getStateFlow<Uri?>("new_image", null)?.collectAsState()?.value
+
+    LaunchedEffect(newCameraImage) {
+        newCameraImage?.let {
+            val currentCount = selectedImageUris.size + existingImages.size
+            if (currentCount < 10) {
+                selectedImageUris = (selectedImageUris + it).distinct()
+            } else {
+                Toast.makeText(context, "Maksimal 10 gambar", Toast.LENGTH_SHORT).show()
+            }
+            savedStateHandle.remove<Uri>("new_image")
+        }
+    }
+
+    // Dialogs
+    if (showImageSourceDialog) {
+        ImageSourceSelectionDialog(
+            onDismiss = { showImageSourceDialog = false },
+            onCameraClick = { 
+                showImageSourceDialog = false
+                navController.navigate("camera") 
+            },
+            onGalleryClick = { 
+                showImageSourceDialog = false
+                galleryLauncher.launch("image/*") 
+            }
+        )
+    }
+
+    if (showDeleteDialog != null) {
+        DeleteConfirmationDialog(
+            onConfirm = {
+                when (val image = showDeleteDialog) {
+                    is Uri -> selectedImageUris = selectedImageUris - image
+                    is String -> existingImages = existingImages - image
+                }
+                showDeleteDialog = null
+            },
+            onDismiss = { showDeleteDialog = null }
+        )
+    }
+
+    showImageViewer?.let { (images, initialIndex) ->
+        FullScreenImageViewer(
+            images = images,
+            initialIndex = initialIndex,
+            onDismiss = { showImageViewer = null },
+            onDelete = { image ->
+                showDeleteDialog = image
+                val updatedImages = images.filter { it != image }
+                if (updatedImages.isEmpty()) {
+                    showImageViewer = null
+                } else {
+                    showImageViewer = updatedImages to 0
+                }
+            }
+        )
     }
 
     // Submit Logic
@@ -54,157 +168,141 @@ fun PicScreen(
     val success by viewModel.success.collectAsState()
     val error by viewModel.error.collectAsState()
 
-    LaunchedEffect(Unit) {
-        viewModel.resetState()
-    }
-
     LaunchedEffect(success) {
         if (success) {
-            Toast.makeText(context, "Finding resolved successfully!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Temuan berhasil diperbaiki!", Toast.LENGTH_SHORT).show()
             onNavigateBack()
         }
     }
-
-    LaunchedEffect(error) {
-        error?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
-    }
+    LaunchedEffect(error) { error?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } }
 
     Scaffold(
-        topBar = { },
-        bottomBar = {
-             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                contentAlignment = Alignment.Center
-            ) { }
+        containerColor = Color(0xFFF5F5F5),
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Form Perbaikan Temuan") },
+                navigationIcon = { IconButton(onClick = onNavigateBack) { Icon(Icons.Default.ArrowBack, "Kembali") } }
+            )
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .padding(paddingValues)
                 .fillMaxSize()
-                .padding(16.dp)
                 .verticalScroll(scrollState)
+                .padding(horizontal = 16.dp)
         ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                 Spacer(modifier = Modifier.weight(1f))
-                 IconButton(onClick = onNavigateBack) {
-                     Icon(imageVector = Icons.Default.Close, contentDescription = "Close")
-                 }
-            }
-            
-            Text(
-                text = "Resolve Finding (PIC)",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Black
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            AnnotatedLabel(label = "Tindakan Perbaikan *")
+            OutlinedTextField(
+                value = countermeasureText,
+                onValueChange = { countermeasureText = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp),
+                placeholder = { Text("Jelaskan tindakan perbaikan yang dilakukan...") },
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = Color.Gray,
+                    focusedBorderColor = Color.Black
+                )
             )
-            
             Spacer(modifier = Modifier.height(16.dp))
-            
-            // Buttons
+
+
+            if (isOverdue) {
+                AnnotatedLabel(label = "Alasan Keterlambatan *")
+                OutlinedTextField(
+                    value = delayReasonText,
+                    onValueChange = { delayReasonText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Jelaskan alasan keterlambatan...") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = Color.Gray,
+                        focusedBorderColor = Color.Black
+                    )
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            FindingFormImagePicker(
+                label = "Foto Bukti Perbaikan *",
+                imageUris = selectedImageUris,
+                existingImageUrls = existingImages,
+                onAddImageClick = { showImageSourceDialog = true },
+                onRemoveUri = { uri -> showDeleteDialog = uri },
+                onRemoveUrl = { url -> showDeleteDialog = url },
+                onImageClick = { allImages, index -> showImageViewer = allImages to index }
+            )
+
+            Spacer(Modifier.height(32.dp))
+
+            // --- Action Buttons ---
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
+                modifier = Modifier
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Button(
                     onClick = onNavigateBack,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE0E0E0), contentColor = Color.Black),
-                    shape = RoundedCornerShape(20.dp),
-                    modifier = Modifier.width(120.dp)
-                ) { Text("Batal") }
-                
-                Spacer(modifier = Modifier.width(16.dp))
-                
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).height(56.dp)
+                ) { Text("Batal", fontSize = 19.sp) }
+
                 Button(
                     onClick = {
-                        val isDelayReasonValid = if (isOverdue) delayReasonText.isNotBlank() else true
-                        
-                        if (countermeasureText.isBlank() || !isDelayReasonValid || selectedImageUris.isEmpty()) {
-                            val msg = if (isOverdue && delayReasonText.isBlank()) "Please fill Delay Reason (*)" else "Please fill Countermeasure & Images (*)"
+                        val isDelayReasonValid = !isOverdue || delayReasonText.isNotBlank()
+                        val hasImages = selectedImageUris.isNotEmpty() || existingImages.isNotEmpty()
+
+                        if (countermeasureText.isBlank() || !isDelayReasonValid || !hasImages) {
+                            val msg = when {
+                                countermeasureText.isBlank() -> "Harap isi Tindakan Perbaikan (*)"
+                                !isDelayReasonValid -> "Harap isi Alasan Keterlambatan (*)"
+                                else -> "Harap tambah setidaknya satu foto bukti (*)"
+                            }
                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         } else {
                             viewModel.updateFinding(
                                 context = context,
                                 id = findingId,
-                                finding = "",
-                                area = "",
-                                patrolId = 0,
-                                picId = null,
-                                priorityId = null,
-                                riskLevelId = null,
-                                findingTypeId = null,
-                                categoryId = null,
-                                countermeasureSuggestion = null,
                                 countermeasure = countermeasureText,
                                 delayReason = if (isOverdue) delayReasonText else null,
-                                imageUris = selectedImageUris
+                                newImprovedImageUris = selectedImageUris
                             )
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD7E8CD), contentColor = Color.Black),
-                    shape = RoundedCornerShape(20.dp),
-                    modifier = Modifier.width(120.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).height(56.dp),
                     enabled = !loading
                 ) {
-                    if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp)) else Text("Simpan")
+                    if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp)) else Text("Simpan", fontSize = 19.sp)
                 }
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
 
-            // Form Fields
-            
-            // 1. Countermeasure *
-            FormRow(
-                label = "Countermeasure *",
-                content = {
-                     OutlinedTextField(
-                        value = countermeasureText,
-                        onValueChange = { countermeasureText = it },
-                        modifier = Modifier.fillMaxWidth().height(100.dp),
-                        placeholder = { Text("Action taken...") },
-                        maxLines = 5,
-                         colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color.Gray,
-                            focusedBorderColor = Color.Black
-                        )
-                    )
-                }
-            )
-
-            // 2. Delay Reason (Conditional) *
-            if (isOverdue) {
-                FormRow(
-                    label = "Delay Reason *",
-                    content = {
-                         OutlinedTextField(
-                            value = delayReasonText,
-                            onValueChange = { delayReasonText = it },
-                            modifier = Modifier.fillMaxWidth().height(80.dp),
-                            placeholder = { Text("Why is it overdue?") },
-                            maxLines = 3,
-                             colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = Color.Gray,
-                                focusedBorderColor = Color.Black
-                            )
-                        )
-                    }
-                )
-            }
-            
-            // 3. Evidence Photos *
-            FormImagePicker(
-                label = "Evidence Photos *",
-                selectedImageUris = selectedImageUris,
-                onPickImage = { imagePickerLauncher.launch("image/*") }
+@Composable
+private fun AnnotatedLabel(label: String) {
+    val annotatedString = buildAnnotatedString {
+        append(label)
+        val starIndex = label.indexOf('*')
+        if (starIndex != -1) {
+            addStyle(
+                style = SpanStyle(color = Color.Red),
+                start = starIndex,
+                end = starIndex + 1
             )
         }
     }
+    Text(
+        text = annotatedString,
+        fontWeight = FontWeight.Bold,
+        fontSize = 16.sp,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
 }

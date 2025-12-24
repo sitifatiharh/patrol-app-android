@@ -2,6 +2,7 @@ package com.rahma.findingpatrol.viewmodel.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rahma.findingpatrol.data.local.DataStoreManager
 import com.rahma.findingpatrol.data.model.dashboard.SummaryData
 import com.rahma.findingpatrol.data.model.finding.Finding
 import com.rahma.findingpatrol.data.repository.DashboardRepository
@@ -12,7 +13,8 @@ import kotlinx.coroutines.launch
 
 class DashboardViewModel(
     private val dashboardRepository: DashboardRepository,
-    private val findingRepository: FindingRepository
+    private val findingRepository: FindingRepository,
+    private val dataStoreManager: DataStoreManager
 ) : ViewModel() {
 
     private val _summaryState = MutableStateFlow<DashboardState>(DashboardState.Loading)
@@ -21,36 +23,54 @@ class DashboardViewModel(
     private val _historyState = MutableStateFlow<HistoryState>(HistoryState.Loading)
     val historyState: StateFlow<HistoryState> = _historyState
 
-    fun loadDashboard() {
+    fun loadDashboard(userId: Int, sectionId: Int, mode: String) {
+        // Load Summary based on the selected mode
         viewModelScope.launch {
+            _summaryState.value = DashboardState.Loading
             try {
-                val response = dashboardRepository.getSummary() // SummaryResponse
-                _summaryState.value = DashboardState.Success(response.data) // ambil .data
+                val summaryUserId = if (mode == "patrol") userId else null
+                val summarySectionId = if (mode == "job") sectionId else null
+
+                val response = dashboardRepository.getSummary(
+                    userId = summaryUserId,
+                    sectionId = summarySectionId
+                )
+                _summaryState.value = DashboardState.Success(response.data)
             } catch (e: Exception) {
                 _summaryState.value = DashboardState.Error(e.message ?: "Error loading summary")
             }
         }
 
+        // Load History preview, ALWAYS based on the user's own findings
         viewModelScope.launch {
+            _historyState.value = HistoryState.Loading
             try {
-                val response = findingRepository.getFindings() // GetFindingResponse
-                _historyState.value = HistoryState.Success(response.data) // ambil .data
+                val response = findingRepository.getFindings(
+                    userId = userId, // Always use userId for the preview
+                    sectionId = null // Ensure sectionId is not used here
+                )
+                _historyState.value = HistoryState.Success(response.data)
             } catch (e: Exception) {
                 _historyState.value = HistoryState.Error(e.message ?: "Error loading history")
             }
         }
     }
 
+    fun saveUserMode(mode: String) {
+        viewModelScope.launch {
+            dataStoreManager.saveUserMode(mode)
+        }
+    }
 }
 
-// Dashboard State dengan tipe data yang tepat
+// Dashboard State
 sealed class DashboardState {
     object Loading : DashboardState()
     data class Success(val data: SummaryData) : DashboardState()
     data class Error(val message: String) : DashboardState()
 }
 
-// History State dengan tipe data yang tepat
+// History State
 sealed class HistoryState {
     object Loading : HistoryState()
     data class Success(val data: List<Finding>) : HistoryState()

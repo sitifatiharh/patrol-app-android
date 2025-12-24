@@ -10,7 +10,15 @@ import retrofit2.http.*
 interface FindingApi {
 
     @GET("finding")
-    suspend fun getFindings(): GetFindingResponse
+    suspend fun getFindings(
+        @Query("user_id") userId: Int? = null,
+        @Query("patrol_id") patrolId: Int? = null,
+        @Query("status_id") statusId: Int? = null,
+        @Query("category_id") categoryId: Int? = null,
+        @Query("date") date: String? = null,
+        @Query("section_id") sectionId: Int? = null,
+        @Query("priority_id") priorityId: Int? = null
+    ): GetFindingResponse
 
     @GET("finding/{id}")
     suspend fun getFindingDetail(@Path("id") id: Int): FindingDetailResponse
@@ -33,7 +41,7 @@ interface FindingApi {
     ): CreateFindingResponse
 
     @Multipart
-    @POST("finding/update/{id}")
+    @PUT("finding/{id}/patrol-edit")
     suspend fun updateFinding(
         @Path("id") id: Int,
         @Part("finding") finding: RequestBody,

@@ -11,7 +11,6 @@ import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 
 class CreateFindingViewModel(
@@ -26,11 +25,15 @@ class CreateFindingViewModel(
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
+    
+    private val _createdFindingId = MutableStateFlow<Int?>(null)
+    val createdFindingId: StateFlow<Int?> = _createdFindingId
 
     fun resetState() {
         _success.value = false
         _loading.value = false
         _error.value = null
+        _createdFindingId.value = null
     }
 
     fun createFinding(
@@ -46,26 +49,43 @@ class CreateFindingViewModel(
         countermeasureSuggestion: String?,
         imageUris: List<Uri>
     ) {
-        submitFinding(context, isUpdate = false, id = 0, finding, area, patrolId, picId, priorityId, riskLevelId, findingTypeId, categoryId, countermeasureSuggestion, null, null, imageUris)
+        submitFinding(
+            context, 
+            isUpdate = false, 
+            id = 0, 
+            finding, area, patrolId, picId, priorityId, riskLevelId, findingTypeId, categoryId, 
+            countermeasureSuggestion, null, null, 
+            imageUris, 
+            emptyList()
+        )
     }
 
     fun updateFinding(
         context: Context,
         id: Int,
-        finding: String,
-        area: String,
-        patrolId: Int,
-        picId: Int?,
-        priorityId: Int?,
-        riskLevelId: Int?,
-        findingTypeId: Int?,
-        categoryId: Int?,
-        countermeasureSuggestion: String?,
-        countermeasure: String? = null, // Added
-        delayReason: String? = null, // Added
-        imageUris: List<Uri>
+        finding: String = "",
+        area: String = "",
+        patrolId: Int = 0,
+        picId: Int? = null,
+        priorityId: Int? = null,
+        riskLevelId: Int? = null,
+        findingTypeId: Int? = null,
+        categoryId: Int? = null,
+        countermeasureSuggestion: String? = null,
+        countermeasure: String? = null, 
+        delayReason: String? = null, 
+        imageUris: List<Uri> = emptyList(),
+        newImprovedImageUris: List<Uri> = emptyList()
     ) {
-        submitFinding(context, isUpdate = true, id = id, finding, area, patrolId, picId, priorityId, riskLevelId, findingTypeId, categoryId, countermeasureSuggestion, countermeasure, delayReason, imageUris)
+        submitFinding(
+            context, 
+            isUpdate = true, 
+            id = id, 
+            finding, area, patrolId, picId, priorityId, riskLevelId, findingTypeId, categoryId, 
+            countermeasureSuggestion, countermeasure, delayReason, 
+            imageUris, 
+            newImprovedImageUris
+        )
     }
 
     private fun submitFinding(
@@ -81,68 +101,73 @@ class CreateFindingViewModel(
         findingTypeId: Int?,
         categoryId: Int?,
         countermeasureSuggestion: String?,
-        countermeasure: String?, // Added
-        delayReason: String?, // Added
-        imageUris: List<Uri>
+        countermeasure: String?, 
+        delayReason: String?, 
+        imageUris: List<Uri>,
+        newImprovedImageUris: List<Uri>
     ) {
         viewModelScope.launch {
             try {
                 _loading.value = true
                 _error.value = null
 
-                val mediaType = "text/plain".toMediaType()
+                val multipartImages = mutableListOf<MultipartBody.Part>()
 
-                val rbFinding = finding.toRequestBody(mediaType)
-                val rbArea = area.toRequestBody(mediaType)
-                val rbPatrolId = patrolId.toString().toRequestBody(mediaType)
-                val rbPicId = picId?.toString()?.toRequestBody(mediaType)
-                val rbPriorityId = priorityId?.toString()?.toRequestBody(mediaType)
-                val rbRiskLevelId = riskLevelId?.toString()?.toRequestBody(mediaType)
-                val rbFindingTypeId = findingTypeId?.toString()?.toRequestBody(mediaType)
-                val rbCategoryId = categoryId?.toString()?.toRequestBody(mediaType)
-                val rbCounterSuggestion = countermeasureSuggestion?.toRequestBody(mediaType)
-                val rbCountermeasure = countermeasure?.toRequestBody(mediaType)
-                val rbDelayReason = delayReason?.toRequestBody(mediaType)
-
-                // Convert images
-                val multipartImages = imageUris.mapIndexed { index, uri ->
+                imageUris.forEachIndexed { index, uri ->
                     val file = uriToFile(context, uri)
-                    MultipartBody.Part.createFormData(
-                        name = "files",
-                        filename = "image_$index.jpg",
-                        body = file.asRequestBody("image/*".toMediaType())
+                    multipartImages.add(
+                        MultipartBody.Part.createFormData(
+                            name = "findingPictures",
+                            filename = "finding_$index.jpg",
+                            body = file.asRequestBody("image/*".toMediaType())
+                        )
+                    )
+                }
+
+                newImprovedImageUris.forEachIndexed { index, uri ->
+                    val file = uriToFile(context, uri)
+                    multipartImages.add(
+                        MultipartBody.Part.createFormData(
+                            name = "improvedPictures",
+                            filename = "improved_$index.jpg",
+                            body = file.asRequestBody("image/*".toMediaType())
+                        )
                     )
                 }
 
                 if (isUpdate) {
                     repository.updateFinding(
                         id = id,
-                        finding = rbFinding,
-                        area = rbArea,
-                        patrolId = rbPatrolId,
-                        picId = rbPicId,
-                        priorityId = rbPriorityId,
-                        riskLevelId = rbRiskLevelId,
-                        findingTypeId = rbFindingTypeId,
-                        categoryId = rbCategoryId,
-                        countermeasureSuggestion = rbCounterSuggestion,
-                        countermeasure = rbCountermeasure,
-                        delayReason = rbDelayReason,
+                        finding = finding,
+                        area = area,
+                        patrolId = patrolId,
+                        picId = picId,
+                        priorityId = priorityId,
+                        riskLevelId = riskLevelId,
+                        findingTypeId = findingTypeId,
+                        categoryId = categoryId,
+                        countermeasureSuggestion = countermeasureSuggestion,
+                        countermeasure = countermeasure,
+                        delayReason = delayReason,
                         images = multipartImages
                     )
+                    _createdFindingId.value = id
                 } else {
-                    repository.createFinding(
-                        finding = rbFinding,
-                        area = rbArea,
-                        patrolId = rbPatrolId,
-                        picId = rbPicId,
-                        priorityId = rbPriorityId,
-                        riskLevelId = rbRiskLevelId,
-                        findingTypeId = rbFindingTypeId,
-                        categoryId = rbCategoryId,
-                        countermeasureSuggestion = rbCounterSuggestion,
+                    val response = repository.createFinding(
+                        finding = finding,
+                        area = area,
+                        patrolId = patrolId,
+                        picId = picId,
+                        priorityId = priorityId,
+                        riskLevelId = riskLevelId,
+                        findingTypeId = findingTypeId,
+                        categoryId = categoryId,
+                        countermeasureSuggestion = countermeasureSuggestion,
+                        countermeasure = countermeasure, // Added missing parameter
+                        delayReason = delayReason, // Added missing parameter
                         images = multipartImages
                     )
+                    _createdFindingId.value = response.data.findingId
                 }
 
                 _success.value = true
@@ -155,15 +180,12 @@ class CreateFindingViewModel(
         }
     }
 
-    /** Convert Uri -> File (untuk Retrofit multipart upload) */
     private fun uriToFile(context: Context, uri: Uri): File {
         val inputStream = context.contentResolver.openInputStream(uri)
         val tempFile = File.createTempFile("finding_", ".jpg", context.cacheDir)
-
         tempFile.outputStream().use { output ->
             inputStream?.copyTo(output)
         }
-
         return tempFile
     }
 }

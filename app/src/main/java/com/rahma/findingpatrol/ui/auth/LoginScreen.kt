@@ -18,6 +18,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.Image
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.ui.res.painterResource
 import com.rahma.findingpatrol.viewmodel.auth.LoginViewModel
 import com.rahma.findingpatrol.R
@@ -55,10 +57,12 @@ fun LoginScreen(
                     .background(Color(0xFFECEAF0)),
                 contentAlignment = Alignment.Center
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_avatar),
+                // Modified: Use Person Icon instead of drawable resource
+                Icon(
+                    imageVector = Icons.Default.Person,
                     contentDescription = null,
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(48.dp),
+                    tint = Color(0xFF5E35B1) // Purple to match other screens
                 )
             }
 

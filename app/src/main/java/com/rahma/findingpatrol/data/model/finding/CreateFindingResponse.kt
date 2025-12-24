@@ -37,5 +37,8 @@ data class CreatedFindingData(
     @SerializedName("status_name") val statusName: String?,
     @SerializedName("patrol_creator_name") val patrolCreatorName: String?,
     @SerializedName("pic_name") val picName: String?,
-    val images: List<FindingImage>
+    val images: List<Image>
 )
+
+// Image class is now defined in FindingDetailResponse.kt
+// and is accessible from this file since they are in the same package.

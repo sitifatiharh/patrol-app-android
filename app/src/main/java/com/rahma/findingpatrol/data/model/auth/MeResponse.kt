@@ -9,6 +9,7 @@ data class MeData(
     val userId: Int,
     val role: String,
     val sectionId: Int,
+    val section: String, // Added the missing field
     val iat: Long,
     val exp: Long
 )

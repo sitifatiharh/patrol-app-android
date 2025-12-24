@@ -2,6 +2,7 @@ package com.rahma.findingpatrol.ui.finding
 
 import android.annotation.SuppressLint
 import com.rahma.findingpatrol.data.model.finding.Finding
+import com.rahma.findingpatrol.data.remote.ApiConfig
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -26,6 +27,24 @@ fun Finding.toCardData(): FindingCardData {
     
     // Formatter untuk output ke UI (contoh: 25 Feb 2025)
     val outputFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
+
+    fun fixImageUrl(localPath: String?): String {
+        if (localPath.isNullOrEmpty()) return ""
+        if (localPath.startsWith("http")) return localPath
+        
+        // Normalize path and extract filename
+        val normalized = localPath.replace("\\", "/")
+        val filename = normalized.substringAfterLast("/")
+
+        // Determine the correct subfolder based on the path content
+        val folder = when {
+            normalized.contains("/improved/", ignoreCase = true) -> "improved"
+            else -> "findings"
+        }
+        
+        // Rebuild the correct, public-facing URL
+        return "${ApiConfig.BASE_URL}/kaizenUploads/$folder/$filename"
+    }
 
     fun formatDate(dateString: String?): String {
         if (dateString.isNullOrEmpty()) return "-"
@@ -63,21 +82,22 @@ fun Finding.toCardData(): FindingCardData {
         else -> "" to ""
     }
 
-    // Handle null countermeasure cleanly
+    // Handle countermeasure (null-safe)
+    val safeCountermeasure = countermeasure ?: ""
     val title = when (statusId) {
-        3, 4 -> "$finding. ${countermeasure ?: ""}"
+        3, 4 -> "$finding. $safeCountermeasure"
         else -> finding
     }
 
-    // Fix NPE on priorityName and patrolName
+    // Return null if priorityName is missing, do NOT default to "Low"
     return FindingCardData(
         id = findingId,
         title = title,
         patrol = patrolName ?: "-",
         area = area,
-        image = cardImage,
+        image = fixImageUrl(cardImage), // <-- FIXED: Clean the URL before using it
         status = statusName,
-        priority = if (priorityName.isNullOrEmpty()) "Low" else priorityName,
+        priority = if (priorityName.isNullOrEmpty()) null else priorityName,
         dateLabel = label,
         dateValue = date
     )

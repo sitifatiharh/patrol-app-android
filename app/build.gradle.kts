@@ -62,6 +62,9 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material.icons)
+    
+    // LiveData Compose integration (Added for observeAsState)
+    implementation("androidx.compose.runtime:runtime-livedata")
 
     // ViewModel Navigation Compose
     implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -88,4 +91,13 @@ dependencies {
     // Debug
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    // CameraX
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    
+    // Accompanist Permissions
+    implementation(libs.accompanist.permissions)
 }

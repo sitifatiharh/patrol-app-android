@@ -1,5 +1,6 @@
 package com.rahma.findingpatrol.ui.finding
 
+import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,6 +27,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.size.Size
+
+// Final correct URL logic
+fun fixCardImageUrl(localPath: String): String {
+    if (localPath.startsWith("http")) return localPath
+    val normalized = localPath.replace("\\", "/")
+    val filename = normalized.substringAfterLast("/")
+    
+    val folder = when {
+        normalized.contains("/improved/") -> "improved"
+        else -> "findings"
+    }
+    
+    // Correct URL pattern found: /kaizenUploads/
+    val url = "http://192.17.102.119:3000/kaizenUploads/$folder/$filename"
+    Log.d("ImageDebug", "Card Raw: $localPath -> Fixed: $url")
+    return url
+}
 
 @Composable
 fun FindingCard(
@@ -58,19 +77,19 @@ fun FindingCard(
                 if (data.image.isNotEmpty()) {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
-                            .data(data.image)
+                            .data(fixCardImageUrl(data.image)) // Apply URL Fix
                             .crossfade(true)
+                            .size(Size.ORIGINAL) // Load full resolution only when needed
                             .build(),
                         contentDescription = "Finding Image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
-                        error = null, // Jangan tampilkan apa-apa jika error, biar box abu di bawahnya kelihatan
+                        error = null, 
                         placeholder = null
                     )
                 }
                 
                 // Icon placeholder (akan tertutup jika gambar berhasil dimuat)
-                // Jika gambar loading atau error (dan AsyncImage transparan/gagal), icon ini akan terlihat
                 if (data.image.isEmpty()) {
                     Icon(
                         imageVector = Icons.Default.PhotoCamera,
@@ -134,8 +153,12 @@ fun FindingCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Priority (Pojok Kiri Bawah)
-                    PriorityIndicator(priority = data.priority ?: "Low")
+                    // Priority (Pojok Kiri Bawah) - Only show if not null
+                    if (data.priority != null) {
+                        PriorityIndicator(priority = data.priority)
+                    } else {
+                        Spacer(modifier = Modifier.width(1.dp)) // Placeholder
+                    }
 
                     // Date (Pojok Kanan Bawah)
                     DateIndicator(label = data.dateLabel, value = data.dateValue)
