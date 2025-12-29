@@ -23,13 +23,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -46,10 +46,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.rahma.findingpatrol.ui.components.CancelButton
 import com.rahma.findingpatrol.ui.components.DeleteConfirmationDialog
 import com.rahma.findingpatrol.ui.components.FormRow
 import com.rahma.findingpatrol.ui.components.FullScreenImageViewer
@@ -122,7 +126,7 @@ fun NewEditFindingScreen(
                 val currentCount = selectedImageUris.size + existingImages.size
                 val availableSlots = 10 - currentCount
                 if (availableSlots > 0) {
-                    selectedImageUris = (selectedImageUris + uris.take(availableSlots)).distinct()
+                    selectedImageUris = (uris.take(availableSlots) + selectedImageUris).distinct()
                 } else {
                     Toast.makeText(context, "Maksimal 10 gambar", Toast.LENGTH_SHORT).show()
                 }
@@ -137,7 +141,7 @@ fun NewEditFindingScreen(
         newCameraImage?.let {
             val currentCount = selectedImageUris.size + existingImages.size
             if (currentCount < 10) {
-                selectedImageUris = (selectedImageUris + it).distinct()
+                selectedImageUris = (listOf(it) + selectedImageUris).distinct()
             } else {
                 Toast.makeText(context, "Maksimal 10 gambar", Toast.LENGTH_SHORT).show()
             }
@@ -264,6 +268,16 @@ fun NewEditFindingScreen(
                     .verticalScroll(scrollState)
                     .padding(horizontal = 16.dp)
             ) {
+                if (!isEditMode) {
+                    Text(
+                        text = buildAnnotatedString {
+                            withStyle(style = SpanStyle(color = Color.Red)) { append("*") }
+                            append(" WAJIB DIISI")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
 
                 FormRow(
@@ -325,9 +339,7 @@ fun NewEditFindingScreen(
                         onOptionSelected = { selected ->
                             selectedPicId = pics.find { it.sectionName == selected }?.sectionId
                             picExpanded = false
-                        },
-                        clearSelectionEnabled = true,
-                        onClearSelection = { selectedPicId = null }
+                        }
                     )
                 }
 
@@ -340,9 +352,7 @@ fun NewEditFindingScreen(
                         onOptionSelected = { selected ->
                             selectedPriorityId = priorities.find { it.priorityName == selected }?.priorityId
                             priorityExpanded = false
-                        },
-                        clearSelectionEnabled = true,
-                        onClearSelection = { selectedPriorityId = null }
+                        }
                     )
                 }
 
@@ -355,9 +365,7 @@ fun NewEditFindingScreen(
                         onOptionSelected = { selected ->
                             selectedRiskLevelId = risks.find { it.riskLevel == selected }?.riskLevelId
                             riskExpanded = false
-                        },
-                        clearSelectionEnabled = true,
-                        onClearSelection = { selectedRiskLevelId = null }
+                        }
                     )
                 }
 
@@ -370,9 +378,7 @@ fun NewEditFindingScreen(
                         onOptionSelected = { selected ->
                             selectedFindingTypeId = types.find { it.typeName == selected }?.findingTypeId
                             typeExpanded = false
-                        },
-                        clearSelectionEnabled = true,
-                        onClearSelection = { selectedFindingTypeId = null }
+                        }
                     )
                 }
 
@@ -381,7 +387,9 @@ fun NewEditFindingScreen(
                         OutlinedTextField(
                             value = countermeasureText,
                             onValueChange = { countermeasureText = it },
-                            modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 120.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 120.dp),
                             placeholder = { Text("Usulan tindakan perbaikan") },
                         )
                         IconButton(
@@ -402,13 +410,10 @@ fun NewEditFindingScreen(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Button(
+                    CancelButton(
                         onClick = onNavigateBack,
-                        colors = ButtonDefaults.outlinedButtonColors(),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Batal")
-                    }
+                        modifier = Modifier.weight(1f).height(48.dp)
+                    )
 
                     val isFormValid = selectedPatrolId != null &&
                             findingText.isNotBlank() &&
@@ -450,7 +455,7 @@ fun NewEditFindingScreen(
                             }
                         },
                         enabled = isFormValid && !loading,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f).height(48.dp)
                     ) {
                         if (loading) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)

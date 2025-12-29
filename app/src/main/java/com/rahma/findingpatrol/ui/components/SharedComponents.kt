@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -103,11 +104,9 @@ fun MetadataDropdown(
     selectedOption: String,
     options: List<String>,
     onOptionSelected: (String) -> Unit,
-    clearSelectionEnabled: Boolean = false,
-    onClearSelection: (() -> Unit)? = null,
     readOnly: Boolean = false
 ) {
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = if (readOnly) {{}} else onExpandedChange) {
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { if (!readOnly) onExpandedChange(it) }) {
         OutlinedTextField(
             value = selectedOption,
             onValueChange = {}, // read-only
@@ -117,20 +116,10 @@ fun MetadataDropdown(
                 .menuAnchor(),
             trailingIcon = {
                 if (!readOnly) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (clearSelectionEnabled && onClearSelection != null && selectedOption.startsWith("Pilih").not()) {
-                            IconButton(onClick = {
-                                onClearSelection.invoke()
-                                onExpandedChange(false) // Close dropdown
-                            }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear selection")
-                            }
-                        }
-                        Icon(
-                            imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Toggle menu"
-                        )
-                    }
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Toggle menu"
+                    )
                 }
             }
         )
@@ -145,7 +134,6 @@ fun MetadataDropdown(
                         text = { Text(option) },
                         onClick = {
                             onOptionSelected(option)
-                            onExpandedChange(false)
                         }
                     )
                 }
@@ -210,7 +198,7 @@ fun FullScreenImageViewer(
     images: List<Any>,
     initialIndex: Int,
     onDismiss: () -> Unit,
-    onDelete: (Any) -> Unit,
+    onDelete: ((Any) -> Unit)? = null, // Make onDelete optional
     onIndexChanged: (Int) -> Unit
 ) {
     val pagerState = rememberPagerState(initialPage = initialIndex, pageCount = { images.size })
@@ -227,12 +215,10 @@ fun FullScreenImageViewer(
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = Color.Black.copy(alpha = 0.9f)) {
             Box(contentAlignment = Alignment.Center) {
-                var isZoomed by remember { mutableStateOf(false) }
-
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
-                    userScrollEnabled = !isZoomed
+                    userScrollEnabled = true // Allow swipe gestures
                 ) { page ->
                     var scale by remember { mutableStateOf(1f) }
                     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -241,22 +227,15 @@ fun FullScreenImageViewer(
                     LaunchedEffect(page) {
                         scale = 1f
                         offset = Offset.Zero
-                        isZoomed = false
                     }
 
                     val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
-                        val newScale = (scale * zoomChange).coerceIn(1f, 4f)
-                        isZoomed = newScale > 1f
-                        val maxPan = (newScale - 1f) * 0.5f * 1000f
-                        offset = if (isZoomed) {
-                            Offset(
-                                x = (offset.x + panChange.x).coerceIn(-maxPan, maxPan),
-                                y = (offset.y + panChange.y).coerceIn(-maxPan, maxPan)
-                            )
-                        } else {
-                            Offset.Zero
-                        }
-                        scale = newScale
+                        scale = (scale * zoomChange).coerceIn(1f, 4f)
+                        val maxPan = (scale - 1f) * 500f
+                        offset = Offset(
+                            x = (offset.x + panChange.x).coerceIn(-maxPan, maxPan),
+                            y = (offset.y + panChange.y).coerceIn(-maxPan, maxPan)
+                        )
                     }
 
                     AsyncImage(
@@ -268,14 +247,8 @@ fun FullScreenImageViewer(
                             .pointerInput(Unit) {
                                 detectTapGestures(
                                     onDoubleTap = {
-                                        if (scale > 1f) {
-                                            scale = 1f
-                                            offset = Offset.Zero
-                                            isZoomed = false
-                                        } else {
-                                            scale = 2.5f
-                                            isZoomed = true
-                                        }
+                                        scale = if (scale > 1f) 1f else 2.5f
+                                        offset = Offset.Zero
                                     }
                                 )
                             }
@@ -306,8 +279,12 @@ fun FullScreenImageViewer(
                             color = Color.White,
                             fontWeight = FontWeight.Bold
                         )
-                        IconButton(onClick = { onDelete(images[pagerState.currentPage]) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Hapus", tint = Color.White)
+                        if (onDelete != null) {
+                            IconButton(onClick = { onDelete(images[pagerState.currentPage]) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Hapus", tint = Color.White)
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.size(48.dp)) // Placeholder for balance
                         }
                     } else {
                         Spacer(Modifier.weight(1f))
@@ -325,9 +302,10 @@ fun ImagePreviewGrid(
     selectedImageUris: List<Uri>,
     onAddImageClick: () -> Unit,
     onImageClick: (List<Any>, Int) -> Unit,
-    onDeleteClick: (Any) -> Unit
+    onDeleteClick: (Any) -> Unit,
+    readOnly: Boolean = false
 ) {
-    val allImages: List<Any> = existingImages + selectedImageUris
+    val allImages: List<Any> = selectedImageUris + existingImages
     val totalImages = allImages.size
 
     Column {
@@ -335,7 +313,7 @@ fun ImagePreviewGrid(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.padding(bottom = 8.dp)
         ) {
-            if (totalImages < 10) {
+            if (!readOnly && totalImages < 10) {
                 item {
                     AddImageButton(onClick = onAddImageClick)
                 }
@@ -354,20 +332,22 @@ fun ImagePreviewGrid(
                             .clickable { onImageClick(allImages, index) },
                         contentScale = ContentScale.Crop
                     )
-                    IconButton(
-                        onClick = { onDeleteClick(image) },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(4.dp)
-                            .size(24.dp)
-                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Hapus gambar",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
+                    if (!readOnly) {
+                        IconButton(
+                            onClick = { onDeleteClick(image) },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp)
+                                .size(24.dp)
+                                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Hapus gambar",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -401,5 +381,19 @@ fun AddImageButton(onClick: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             Text("Tambah Gambar", color = Color.Gray, fontSize = 12.sp)
         }
+    }
+}
+
+@Composable
+fun CancelButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.error,
+            contentColor = Color.White
+        )
+    ) {
+        Text("Batal", fontSize = 16.sp)
     }
 }

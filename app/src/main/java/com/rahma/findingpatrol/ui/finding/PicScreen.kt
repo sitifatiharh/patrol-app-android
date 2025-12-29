@@ -19,13 +19,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -37,13 +38,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.rahma.findingpatrol.ui.components.CancelButton
 import com.rahma.findingpatrol.ui.components.DeleteConfirmationDialog
 import com.rahma.findingpatrol.ui.components.FormRow
 import com.rahma.findingpatrol.ui.components.FullScreenImageViewer
@@ -66,12 +73,14 @@ fun PicScreen(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    val focusManager = LocalFocusManager.current
 
     // State
     var countermeasureText by rememberSaveable { mutableStateOf("") }
     var delayReasonText by rememberSaveable { mutableStateOf("") }
-    var selectedImageUris by rememberSaveable { mutableStateOf<List<Uri>>(emptyList()) }
-    var existingImages by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var selectedImprovedUris by rememberSaveable { mutableStateOf<List<Uri>>(emptyList()) }
+    var existingImprovedImages by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var existingFindingImages by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var screenTitle by rememberSaveable { mutableStateOf("Form Perbaikan Temuan") }
     var buttonText by rememberSaveable { mutableStateOf("Simpan Perbaikan") }
     var isReadyForRecheck by rememberSaveable { mutableStateOf(false) }
@@ -96,8 +105,13 @@ fun PicScreen(
             if (countermeasureText.isEmpty()) {
                 countermeasureText = detail.countermeasure ?: ""
             }
-            if (existingImages.isEmpty()) {
-                existingImages = detail.images
+            if (existingFindingImages.isEmpty()) {
+                existingFindingImages = detail.images
+                    .filter { it.imageType == "finding" }
+                    .map { fixImageUrl(it.imageUrl) }
+            }
+            if (existingImprovedImages.isEmpty()) {
+                existingImprovedImages = detail.images
                     .filter { it.imageType == "improved" }
                     .map { fixImageUrl(it.imageUrl) }
             }
@@ -110,10 +124,10 @@ fun PicScreen(
     // Image Launchers
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (uris.isNotEmpty()) {
-            val currentCount = selectedImageUris.size + existingImages.size
+            val currentCount = selectedImprovedUris.size + existingImprovedImages.size
             val availableSlots = 10 - currentCount
             if (availableSlots > 0) {
-                selectedImageUris = (selectedImageUris + uris.take(availableSlots)).distinct()
+                selectedImprovedUris = (uris.take(availableSlots) + selectedImprovedUris).distinct()
             } else {
                 Toast.makeText(context, "Maksimal 10 gambar", Toast.LENGTH_SHORT).show()
             }
@@ -125,9 +139,9 @@ fun PicScreen(
 
     LaunchedEffect(newCameraImage) {
         newCameraImage?.let {
-            val currentCount = selectedImageUris.size + existingImages.size
+            val currentCount = selectedImprovedUris.size + existingImprovedImages.size
             if (currentCount < 10) {
-                selectedImageUris = (selectedImageUris + it).distinct()
+                selectedImprovedUris = (listOf(it) + selectedImprovedUris).distinct()
             } else {
                 Toast.makeText(context, "Maksimal 10 gambar", Toast.LENGTH_SHORT).show()
             }
@@ -155,8 +169,8 @@ fun PicScreen(
             onConfirm = {
                 val imageToDelete = showDeleteDialog
                 when (imageToDelete) {
-                    is Uri -> selectedImageUris = selectedImageUris.filter { it != imageToDelete }
-                    is String -> existingImages = existingImages.filter { it != imageToDelete }
+                    is Uri -> selectedImprovedUris = selectedImprovedUris.filter { it != imageToDelete }
+                    is String -> existingImprovedImages = existingImprovedImages.filter { it != imageToDelete }
                 }
                 showDeleteDialog = null
                 showImageViewer?.let { (currentImages, currentIndex) ->
@@ -178,7 +192,7 @@ fun PicScreen(
             images = images,
             initialIndex = initialIndex,
             onDismiss = { showImageViewer = null },
-            onDelete = { image -> showDeleteDialog = image },
+            onDelete = if (images.any{it is Uri} || images.any { it is String && existingImprovedImages.contains(it) }) {{ image -> showDeleteDialog = image }} else null,
             onIndexChanged = { newIndex -> showImageViewer = images to newIndex }
         )
     }
@@ -213,20 +227,46 @@ fun PicScreen(
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp)
         ) {
-
+            Text(
+                text = buildAnnotatedString {
+                    withStyle(style = SpanStyle(color = Color.Red)) { append("*") }
+                    append(" WAJIB DIISI")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 16.dp)
+            )
             Spacer(modifier = Modifier.height(16.dp))
 
-            FormRow(label = "Countermeasure", isMandatory = true) {
-                OutlinedTextField(
-                    value = countermeasureText,
-                    onValueChange = { countermeasureText = it },
-                    modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 120.dp),
-                    placeholder = { Text("Jelaskan tindakan perbaikan yang dilakukan...") },
+            FormRow(label = "Finding Pictures") {
+                ImagePreviewGrid(
+                    existingImages = existingFindingImages,
+                    selectedImageUris = emptyList(),
+                    onAddImageClick = {},
+                    onImageClick = { images, index -> showImageViewer = images to index },
+                    onDeleteClick = {},
+                    readOnly = true
                 )
             }
 
+            FormRow(label = "Tindakan Perbaikan", isMandatory = true) {
+                Box(modifier = Modifier.fillMaxWidth()){
+                    OutlinedTextField(
+                        value = countermeasureText,
+                        onValueChange = { countermeasureText = it },
+                        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 120.dp),
+                        placeholder = { Text("Jelaskan tindakan perbaikan yang dilakukan...") },
+                    )
+                    IconButton(
+                        onClick = { focusManager.clearFocus() },
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = "Done")
+                    }
+                }
+            }
+
             if (isOverdue) {
-                FormRow(label = "Delay Reason", isMandatory = true) {
+                FormRow(label = "Alasan Keterlambatan", isMandatory = true) {
                     OutlinedTextField(
                         value = delayReasonText,
                         onValueChange = { delayReasonText = it },
@@ -236,10 +276,10 @@ fun PicScreen(
                 }
             }
 
-            FormRow(label = "Improved Pictures", isMandatory = true) {
+            FormRow(label = "Foto Bukti Perbaikan", isMandatory = true) {
                 ImagePreviewGrid(
-                    existingImages = existingImages,
-                    selectedImageUris = selectedImageUris,
+                    existingImages = existingImprovedImages,
+                    selectedImageUris = selectedImprovedUris,
                     onAddImageClick = { showImageSourceDialog = true },
                     onImageClick = { images, index -> showImageViewer = images to index },
                     onDeleteClick = { image -> showDeleteDialog = image }
@@ -253,16 +293,12 @@ fun PicScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Button(
-                    onClick = onNavigateBack,
-                    colors = ButtonDefaults.outlinedButtonColors(),
-                    modifier = Modifier.weight(1f).height(48.dp)
-                ) { Text("Batal", fontSize = 16.sp) }
+                CancelButton(onClick = onNavigateBack, modifier = Modifier.weight(1f).height(48.dp))
 
                 Button(
                     onClick = {
                         val isDelayReasonValid = !isOverdue || delayReasonText.isNotBlank()
-                        val hasImages = selectedImageUris.isNotEmpty() || existingImages.isNotEmpty()
+                        val hasImages = selectedImprovedUris.isNotEmpty() || existingImprovedImages.isNotEmpty()
 
                         if (countermeasureText.isBlank() || !isDelayReasonValid || !hasImages) {
                             val msg = when {
@@ -277,17 +313,17 @@ fun PicScreen(
                                 id = findingId,
                                 countermeasure = countermeasureText,
                                 delayReason = if (isOverdue) delayReasonText else "",
-                                imageUris = selectedImageUris
+                                imageUris = selectedImprovedUris
                             )
                         }
                     },
                     modifier = Modifier.weight(1f).height(48.dp),
                     enabled = !loading
                 ) {
-                    if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White) else Text(buttonText, fontSize = 16.sp)
+                    if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White) else Text(buttonText, fontSize = 15.sp, maxLines = 1)
                 }
             }
-            Spacer(Modifier.height(80.dp))
+            Spacer(modifier = Modifier.height(80.dp))
         }
     }
 }

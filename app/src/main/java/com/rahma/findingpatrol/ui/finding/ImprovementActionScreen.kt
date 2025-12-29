@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,7 +27,7 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -43,10 +44,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.rahma.findingpatrol.ui.components.CancelButton
 import com.rahma.findingpatrol.ui.components.DeleteConfirmationDialog
 import com.rahma.findingpatrol.ui.components.FormRow
 import com.rahma.findingpatrol.ui.components.FullScreenImageViewer
@@ -72,6 +78,7 @@ fun ImprovementActionScreen(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    val focusManager = LocalFocusManager.current
 
     // --- State Variables ---
     var findingText by rememberSaveable { mutableStateOf("") }
@@ -87,8 +94,8 @@ fun ImprovementActionScreen(
 
     // --- Image States ---
     var newFindingImages by rememberSaveable { mutableStateOf<List<Uri>>(emptyList()) }
-    var existingFindingImages by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var newImprovedImages by rememberSaveable { mutableStateOf<List<Uri>>(emptyList()) }
+    var existingFindingImages by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var existingImprovedImages by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
 
     // --- UI State ---
@@ -173,31 +180,27 @@ fun ImprovementActionScreen(
     }
 
     // --- Image Launchers & Handlers ---
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents(),
-        onResult = { uris ->
-            if (uris.isNotEmpty()) {
-                if (imagePickerTarget == "finding") {
-                    val currentCount = newFindingImages.size + existingFindingImages.size
-                    val availableSlots = 10 - currentCount
-                    if (availableSlots > 0) {
-                        newFindingImages = (newFindingImages + uris.take(availableSlots)).distinct()
-                    } else {
-                        Toast.makeText(context, "Maksimal 10 gambar", Toast.LENGTH_SHORT).show()
-                    }
-                } else { // improved
-                    val currentCount = newImprovedImages.size + existingImprovedImages.size
-                    val availableSlots = 10 - currentCount
-                    if (availableSlots > 0) {
-                        newImprovedImages = (newImprovedImages + uris.take(availableSlots)).distinct()
-                    } else {
-                        Toast.makeText(context, "Maksimal 10 gambar", Toast.LENGTH_SHORT).show()
-                    }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isNotEmpty()) {
+            if (imagePickerTarget == "finding") {
+                val currentCount = newFindingImages.size + existingFindingImages.size
+                val availableSlots = 10 - currentCount
+                if (availableSlots > 0) {
+                    newFindingImages = (uris.take(availableSlots) + newFindingImages).distinct()
+                } else {
+                    Toast.makeText(context, "Maksimal 10 gambar", Toast.LENGTH_SHORT).show()
+                }
+            } else { // improved
+                val currentCount = newImprovedImages.size + existingImprovedImages.size
+                val availableSlots = 10 - currentCount
+                if (availableSlots > 0) {
+                    newImprovedImages = (uris.take(availableSlots) + newImprovedImages).distinct()
+                } else {
+                    Toast.makeText(context, "Maksimal 10 gambar", Toast.LENGTH_SHORT).show()
                 }
             }
-            imagePickerTarget = null
         }
-    )
+    }
 
     val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
     val newCameraImage = savedStateHandle?.getStateFlow<Uri?>("new_image", null)?.collectAsState()?.value
@@ -207,20 +210,20 @@ fun ImprovementActionScreen(
             imagePickerTarget?.let { target ->
                 if (target == "finding") {
                     if (newFindingImages.size + existingFindingImages.size < 10) {
-                        newFindingImages = (newFindingImages + uri).distinct()
+                        newFindingImages = (listOf(uri) + newFindingImages).distinct()
                     } else {
                         Toast.makeText(context, "Maksimal 10 gambar", Toast.LENGTH_SHORT).show()
                     }
                 } else { // improved
                     if (newImprovedImages.size + existingImprovedImages.size < 10) {
-                        newImprovedImages = (newImprovedImages + uri).distinct()
+                        newImprovedImages = (listOf(uri) + newImprovedImages).distinct()
                     } else {
                         Toast.makeText(context, "Maksimal 10 gambar", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
             savedStateHandle.remove<Uri>("new_image")
-            imagePickerTarget = null
+            imagePickerTarget = null // reset target
         }
     }
 
@@ -228,14 +231,8 @@ fun ImprovementActionScreen(
     if (imagePickerTarget != null) {
         ImageSourceSelectionDialog(
             onDismiss = { imagePickerTarget = null },
-            onCameraClick = {
-                navController.navigate("camera")
-                imagePickerTarget = null
-            },
-            onGalleryClick = {
-                galleryLauncher.launch("image/*")
-                imagePickerTarget = null
-            }
+            onCameraClick = { navController.navigate("camera") },
+            onGalleryClick = { galleryLauncher.launch("image/*") }
         )
     }
 
@@ -248,6 +245,7 @@ fun ImprovementActionScreen(
                         newFindingImages = newFindingImages.filter { it != imageToDelete }
                         newImprovedImages = newImprovedImages.filter { it != imageToDelete }
                     }
+
                     is String -> {
                         existingFindingImages = existingFindingImages.filter { it != imageToDelete }
                         existingImprovedImages = existingImprovedImages.filter { it != imageToDelete }
@@ -321,7 +319,16 @@ fun ImprovementActionScreen(
                     .verticalScroll(scrollState)
                     .padding(horizontal = 16.dp)
             ) {
-
+                if (isOpen || isAssigned || isReady) {
+                    Text(
+                        text = buildAnnotatedString {
+                            withStyle(style = SpanStyle(color = Color.Red)) { append("*") }
+                            append(" WAJIB DIISI")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                }
                 Spacer(modifier = Modifier.height(16.dp))
 
                 FormRow(label = "Finding") { OutlinedTextField(value = findingText, onValueChange = {}, modifier = Modifier.fillMaxWidth(), readOnly = true) }
@@ -329,12 +336,13 @@ fun ImprovementActionScreen(
                 FormRow(label = "Patrol") {
                     MetadataDropdown(expanded = patrolExpanded, onExpandedChange = { patrolExpanded = it }, selectedOption = selectedPatrol?.patrolName ?: "Pilih Patrol", options = patrols.map { it.patrolName }, onOptionSelected = { selected -> selectedPatrolId = patrols.find { it.patrolName == selected }?.patrolId }, readOnly = true)
                 }
+
                 FormRow(label = "Finding Pictures") {
                     ImagePreviewGrid(
                         existingImages = existingFindingImages,
                         selectedImageUris = newFindingImages,
                         onAddImageClick = { imagePickerTarget = "finding" },
-                        onImageClick = { _, index -> showImageViewer = (existingFindingImages + newFindingImages) to index },
+                        onImageClick = { _, index -> showImageViewer = (newFindingImages + existingFindingImages) to index },
                         onDeleteClick = { image -> showDeleteDialog = image }
                     )
                 }
@@ -342,19 +350,24 @@ fun ImprovementActionScreen(
                 Divider(modifier = Modifier.padding(vertical = 16.dp))
 
                 FormRow(label = "PIC", isMandatory = isOpen || isAssigned) {
-                    MetadataDropdown(expanded = picExpanded, onExpandedChange = { picExpanded = it }, selectedOption = selectedPic?.sectionName ?: "Pilih PIC", options = pics.map { it.sectionName }, onOptionSelected = { selected -> selectedPicId = pics.find { it.sectionName == selected }?.sectionId }, clearSelectionEnabled = true, onClearSelection = { selectedPicId = null })
+                    MetadataDropdown(expanded = picExpanded, onExpandedChange = { picExpanded = it }, selectedOption = selectedPic?.sectionName ?: "Pilih PIC", options = pics.map { it.sectionName }, onOptionSelected = { selected -> selectedPicId = pics.find { it.sectionName == selected }?.sectionId ; picExpanded = false }, readOnly = isReady || isClosed)
                 }
                 FormRow(label = "Priority") {
-                    MetadataDropdown(expanded = priorityExpanded, onExpandedChange = { priorityExpanded = it }, selectedOption = selectedPriority?.priorityName ?: "Pilih Prioritas", options = priorities.map { it.priorityName }, onOptionSelected = { selected -> selectedPriorityId = priorities.find { it.priorityName == selected }?.priorityId }, clearSelectionEnabled = true, onClearSelection = { selectedPriorityId = null })
+                    MetadataDropdown(expanded = priorityExpanded, onExpandedChange = { priorityExpanded = it }, selectedOption = selectedPriority?.priorityName ?: "Pilih Prioritas", options = priorities.map { it.priorityName }, onOptionSelected = { selected -> selectedPriorityId = priorities.find { it.priorityName == selected }?.priorityId ; priorityExpanded = false })
                 }
                 FormRow(label = "Risk Level") {
-                    MetadataDropdown(expanded = riskExpanded, onExpandedChange = { riskExpanded = it }, selectedOption = selectedRiskLevel?.riskLevel ?: "Pilih Tingkat Risiko", options = risks.map { it.riskLevel }, onOptionSelected = { selected -> selectedRiskLevelId = risks.find { it.riskLevel == selected }?.riskLevelId }, clearSelectionEnabled = true, onClearSelection = { selectedRiskLevelId = null })
+                    MetadataDropdown(expanded = riskExpanded, onExpandedChange = { riskExpanded = it }, selectedOption = selectedRiskLevel?.riskLevel ?: "Pilih Tingkat Risiko", options = risks.map { it.riskLevel }, onOptionSelected = { selected -> selectedRiskLevelId = risks.find { it.riskLevel == selected }?.riskLevelId ; riskExpanded = false })
                 }
                 FormRow(label = "Finding Type") {
-                    MetadataDropdown(expanded = typeExpanded, onExpandedChange = { typeExpanded = it }, selectedOption = selectedFindingType?.typeName ?: "Pilih Tipe Temuan", options = types.map { it.typeName }, onOptionSelected = { selected -> selectedFindingTypeId = types.find { it.typeName == selected }?.findingTypeId }, clearSelectionEnabled = true, onClearSelection = { selectedFindingTypeId = null })
+                    MetadataDropdown(expanded = typeExpanded, onExpandedChange = { typeExpanded = it }, selectedOption = selectedFindingType?.typeName ?: "Pilih Tipe Temuan", options = types.map { it.typeName }, onOptionSelected = { selected -> selectedFindingTypeId = types.find { it.typeName == selected }?.findingTypeId ; typeExpanded = false })
                 }
                 FormRow(label = if (isOpen || isAssigned) "Countermeasure Suggestion" else "Countermeasure") {
-                    OutlinedTextField(value = countermeasureText, onValueChange = { countermeasureText = it }, modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 80.dp))
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(value = countermeasureText, onValueChange = { countermeasureText = it }, modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 80.dp))
+                        IconButton(onClick = { focusManager.clearFocus() }, modifier = Modifier.align(Alignment.BottomEnd)) {
+                            Icon(Icons.Default.Check, "Done")
+                        }
+                    }
                 }
 
                 if (closingSectionIsVisible) {
@@ -364,13 +377,13 @@ fun ImprovementActionScreen(
                             existingImages = existingImprovedImages,
                             selectedImageUris = newImprovedImages,
                             onAddImageClick = { imagePickerTarget = "improved" },
-                            onImageClick = { _, index -> showImageViewer = (existingImprovedImages + newImprovedImages) to index },
+                            onImageClick = { _, index -> showImageViewer = (newImprovedImages + existingImprovedImages) to index },
                             onDeleteClick = { image -> showDeleteDialog = image }
                         )
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                     FormRow("Category", isMandatory = isReady) {
-                        MetadataDropdown(expanded = categoryExpanded, onExpandedChange = { categoryExpanded = it }, selectedOption = selectedCategory?.categoryName ?: "Pilih Kategori", options = categories.map { it.categoryName }, onOptionSelected = { selected -> selectedCategoryId = categories.find { it.categoryName == selected }?.categoryId }, clearSelectionEnabled = true, onClearSelection = { selectedCategoryId = null })
+                        MetadataDropdown(expanded = categoryExpanded, onExpandedChange = { categoryExpanded = it }, selectedOption = selectedCategory?.categoryName ?: "Pilih Kategori", options = categories.map { it.categoryName }, onOptionSelected = { selected -> selectedCategoryId = categories.find { it.categoryName == selected }?.categoryId ; categoryExpanded = false })
                     }
                 }
 
@@ -380,12 +393,7 @@ fun ImprovementActionScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = onNavigateBack,
-                        modifier = Modifier.weight(1f).height(48.dp)
-                    ) {
-                        Text("Batal", fontSize = 16.sp)
-                    }
+                    CancelButton(onClick = onNavigateBack, modifier = Modifier.weight(1f).height(48.dp))
 
                     Button(
                         onClick = {
@@ -421,7 +429,7 @@ fun ImprovementActionScreen(
                                 isClosed -> "Edit Temuan"
                                 else -> "Simpan"
                             }
-                            Text(buttonText, fontSize = 15.sp, maxLines = 1) // Reduced font size
+                            Text(buttonText, fontSize = 15.sp, maxLines = 1)
                         }
                     }
                 }
