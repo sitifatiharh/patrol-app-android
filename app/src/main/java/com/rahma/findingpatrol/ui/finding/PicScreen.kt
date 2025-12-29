@@ -4,40 +4,51 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import coil.compose.AsyncImage
+import com.rahma.findingpatrol.ui.components.DeleteConfirmationDialog
+import com.rahma.findingpatrol.ui.components.FormRow
+import com.rahma.findingpatrol.ui.components.FullScreenImageViewer
+import com.rahma.findingpatrol.ui.components.ImagePreviewGrid
+import com.rahma.findingpatrol.ui.components.ImageSourceSelectionDialog
 import com.rahma.findingpatrol.util.fixImageUrl
 import com.rahma.findingpatrol.viewmodel.finding.CreateFindingViewModel
 import com.rahma.findingpatrol.viewmodel.finding.FindingDetailState
@@ -61,10 +72,13 @@ fun PicScreen(
     var delayReasonText by rememberSaveable { mutableStateOf("") }
     var selectedImageUris by rememberSaveable { mutableStateOf<List<Uri>>(emptyList()) }
     var existingImages by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var screenTitle by rememberSaveable { mutableStateOf("Form Perbaikan Temuan") }
+    var buttonText by rememberSaveable { mutableStateOf("Simpan Perbaikan") }
+    var isReadyForRecheck by rememberSaveable { mutableStateOf(false) }
 
     // UI State
     var showImageSourceDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf<Any?>(null) } // Can be Uri or String
+    var showDeleteDialog by remember { mutableStateOf<Any?>(null) }
     var showImageViewer by remember { mutableStateOf<Pair<List<Any>, Int>?>(null) }
 
     // Data Loading
@@ -87,6 +101,9 @@ fun PicScreen(
                     .filter { it.imageType == "improved" }
                     .map { fixImageUrl(it.imageUrl) }
             }
+            isReadyForRecheck = detail.statusName.uppercase() == "READY FOR RECHECK"
+            screenTitle = if (isReadyForRecheck) "Form Edit Perbaikan" else "Form Perbaikan Temuan"
+            buttonText = if (isReadyForRecheck) "Edit Perbaikan" else "Simpan Perbaikan"
         }
     }
 
@@ -122,13 +139,13 @@ fun PicScreen(
     if (showImageSourceDialog) {
         ImageSourceSelectionDialog(
             onDismiss = { showImageSourceDialog = false },
-            onCameraClick = { 
+            onCameraClick = {
                 showImageSourceDialog = false
-                navController.navigate("camera") 
+                navController.navigate("camera")
             },
-            onGalleryClick = { 
+            onGalleryClick = {
                 showImageSourceDialog = false
-                galleryLauncher.launch("image/*") 
+                galleryLauncher.launch("image/*")
             }
         )
     }
@@ -136,11 +153,21 @@ fun PicScreen(
     if (showDeleteDialog != null) {
         DeleteConfirmationDialog(
             onConfirm = {
-                when (val image = showDeleteDialog) {
-                    is Uri -> selectedImageUris = selectedImageUris - image
-                    is String -> existingImages = existingImages - image
+                val imageToDelete = showDeleteDialog
+                when (imageToDelete) {
+                    is Uri -> selectedImageUris = selectedImageUris.filter { it != imageToDelete }
+                    is String -> existingImages = existingImages.filter { it != imageToDelete }
                 }
                 showDeleteDialog = null
+                showImageViewer?.let { (currentImages, currentIndex) ->
+                    val updatedImages = currentImages.filter { it != imageToDelete }
+                    if (updatedImages.isEmpty()) {
+                        showImageViewer = null
+                    } else {
+                        val newIndex = (currentIndex).coerceAtMost(updatedImages.size - 1)
+                        showImageViewer = updatedImages to newIndex
+                    }
+                }
             },
             onDismiss = { showDeleteDialog = null }
         )
@@ -151,15 +178,8 @@ fun PicScreen(
             images = images,
             initialIndex = initialIndex,
             onDismiss = { showImageViewer = null },
-            onDelete = { image ->
-                showDeleteDialog = image
-                val updatedImages = images.filter { it != image }
-                if (updatedImages.isEmpty()) {
-                    showImageViewer = null
-                } else {
-                    showImageViewer = updatedImages to 0
-                }
-            }
+            onDelete = { image -> showDeleteDialog = image },
+            onIndexChanged = { newIndex -> showImageViewer = images to newIndex }
         )
     }
 
@@ -170,7 +190,8 @@ fun PicScreen(
 
     LaunchedEffect(success) {
         if (success) {
-            Toast.makeText(context, "Temuan berhasil diperbaiki!", Toast.LENGTH_SHORT).show()
+            val message = if (isReadyForRecheck) "Perbaikan berhasil di-edit!" else "Temuan berhasil diperbaiki!"
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
             onNavigateBack()
         }
     }
@@ -180,7 +201,7 @@ fun PicScreen(
         containerColor = Color(0xFFF5F5F5),
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Form Perbaikan Temuan") },
+                title = { Text(screenTitle, fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onNavigateBack) { Icon(Icons.Default.ArrowBack, "Kembali") } }
             )
         }
@@ -193,63 +214,50 @@ fun PicScreen(
                 .padding(horizontal = 16.dp)
         ) {
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            AnnotatedLabel(label = "Tindakan Perbaikan *")
-            OutlinedTextField(
-                value = countermeasureText,
-                onValueChange = { countermeasureText = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(120.dp),
-                placeholder = { Text("Jelaskan tindakan perbaikan yang dilakukan...") },
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = Color.Gray,
-                    focusedBorderColor = Color.Black
-                )
-            )
             Spacer(modifier = Modifier.height(16.dp))
 
-
-            if (isOverdue) {
-                AnnotatedLabel(label = "Alasan Keterlambatan *")
+            FormRow(label = "Countermeasure", isMandatory = true) {
                 OutlinedTextField(
-                    value = delayReasonText,
-                    onValueChange = { delayReasonText = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Jelaskan alasan keterlambatan...") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = Color.Gray,
-                        focusedBorderColor = Color.Black
-                    )
+                    value = countermeasureText,
+                    onValueChange = { countermeasureText = it },
+                    modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 120.dp),
+                    placeholder = { Text("Jelaskan tindakan perbaikan yang dilakukan...") },
                 )
-                Spacer(modifier = Modifier.height(16.dp))
             }
 
-            FindingFormImagePicker(
-                label = "Foto Bukti Perbaikan *",
-                imageUris = selectedImageUris,
-                existingImageUrls = existingImages,
-                onAddImageClick = { showImageSourceDialog = true },
-                onRemoveUri = { uri -> showDeleteDialog = uri },
-                onRemoveUrl = { url -> showDeleteDialog = url },
-                onImageClick = { allImages, index -> showImageViewer = allImages to index }
-            )
+            if (isOverdue) {
+                FormRow(label = "Delay Reason", isMandatory = true) {
+                    OutlinedTextField(
+                        value = delayReasonText,
+                        onValueChange = { delayReasonText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Jelaskan alasan keterlambatan...") },
+                    )
+                }
+            }
 
-            Spacer(Modifier.height(32.dp))
+            FormRow(label = "Improved Pictures", isMandatory = true) {
+                ImagePreviewGrid(
+                    existingImages = existingImages,
+                    selectedImageUris = selectedImageUris,
+                    onAddImageClick = { showImageSourceDialog = true },
+                    onImageClick = { images, index -> showImageViewer = images to index },
+                    onDeleteClick = { image -> showDeleteDialog = image }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
 
             // --- Action Buttons ---
             Row(
-                modifier = Modifier
-                    .fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Button(
                     onClick = onNavigateBack,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE0E0E0), contentColor = Color.Black),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).height(56.dp)
-                ) { Text("Batal", fontSize = 19.sp) }
+                    colors = ButtonDefaults.outlinedButtonColors(),
+                    modifier = Modifier.weight(1f).height(48.dp)
+                ) { Text("Batal", fontSize = 16.sp) }
 
                 Button(
                     onClick = {
@@ -264,45 +272,22 @@ fun PicScreen(
                             }
                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         } else {
-                            viewModel.updateFinding(
+                            viewModel.updateFindingByPIC(
                                 context = context,
                                 id = findingId,
                                 countermeasure = countermeasureText,
-                                delayReason = if (isOverdue) delayReasonText else null,
-                                newImprovedImageUris = selectedImageUris
+                                delayReason = if (isOverdue) delayReasonText else "",
+                                imageUris = selectedImageUris
                             )
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD7E8CD), contentColor = Color.Black),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).height(56.dp),
+                    modifier = Modifier.weight(1f).height(48.dp),
                     enabled = !loading
                 ) {
-                    if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp)) else Text("Simpan", fontSize = 19.sp)
+                    if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White) else Text(buttonText, fontSize = 16.sp)
                 }
             }
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(Modifier.height(80.dp))
         }
     }
-}
-
-@Composable
-private fun AnnotatedLabel(label: String) {
-    val annotatedString = buildAnnotatedString {
-        append(label)
-        val starIndex = label.indexOf('*')
-        if (starIndex != -1) {
-            addStyle(
-                style = SpanStyle(color = Color.Red),
-                start = starIndex,
-                end = starIndex + 1
-            )
-        }
-    }
-    Text(
-        text = annotatedString,
-        fontWeight = FontWeight.Bold,
-        fontSize = 16.sp,
-        modifier = Modifier.padding(bottom = 8.dp)
-    )
 }

@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rahma.findingpatrol.data.model.dashboard.SummaryData
@@ -154,17 +155,31 @@ fun DashboardScreen(
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceAround,
+                                    verticalAlignment = Alignment.Top
                                 ) {
                                     StatItem(
+                                        modifier = Modifier.weight(1f),
                                         count = summary.open.toString(),
                                         label = "Open",
                                         enabled = userMode != "pic"
                                     ) { onNavigateToFindingStats(1, "Open", userMode) }
-                                    StatItem(count = summary.assigned.toString(), label = "Assigned") { onNavigateToFindingStats(2, "Assigned", userMode) }
-                                    StatItem(count = summary.readyForRecheck.toString(), label = "Ready for Recheck") { onNavigateToFindingStats(3, "Ready for Recheck", userMode) }
+                                    StatItem(
+                                        modifier = Modifier.weight(1f),
+                                        count = summary.assigned.toString(),
+                                        label = "Assigned"
+                                    ) { onNavigateToFindingStats(2, "Assigned", userMode) }
+                                    StatItem(
+                                        modifier = Modifier.weight(1f),
+                                        count = summary.readyForRecheck.toString(),
+                                        label = "Ready for Recheck"
+                                    ) { onNavigateToFindingStats(3, "Ready for Recheck", userMode) }
                                     val closedText = "${summary.closed.today}/${summary.closed.month}"
-                                    StatItem(count = closedText, label = "Closed") { onNavigateToFindingStats(4, "Closed", userMode) }
+                                    StatItem(
+                                        modifier = Modifier.weight(1f),
+                                        count = closedText,
+                                        label = "Closed"
+                                    ) { onNavigateToFindingStats(4, "Closed", userMode) }
                                 }
                             }
                         }
@@ -244,54 +259,50 @@ fun DashboardScreen(
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(100.dp))
             }
         }
     }
 }
 
 @Composable
-private fun StatItem(count: String, label: String, enabled: Boolean = true, onClick: () -> Unit) {
+fun StatItem(
+    modifier: Modifier = Modifier,
+    count: String,
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
     val color = if (enabled) Color.Black else Color.Gray
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .width(72.dp)
-            .clip(RoundedCornerShape(16.dp))
+        modifier = modifier
+            .padding(horizontal = 4.dp) // Add some horizontal padding between items
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 4.dp)
     ) {
-        Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        Box(
+            contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(72.dp)
-                .border(1.5.dp, Color(0xFFE0E0E0), RoundedCornerShape(12.dp))
+                .fillMaxWidth()
+                .height(64.dp) // Fixed height for uniform boxes
+                .clip(RoundedCornerShape(8.dp))
+                .border(1.dp, if (enabled) Color.LightGray else Color.Transparent, RoundedCornerShape(8.dp))
+                .background(if (enabled) Color.White else Color(0xFFF0F0F0))
         ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = count,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 22.sp,
-                    color = color
-                )
-            }
+            Text(
+                text = count,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
         }
-
         Spacer(modifier = Modifier.height(8.dp))
-
         Text(
             text = label,
             fontSize = 14.sp,
-            color = color,
-            lineHeight = 17.sp,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+            color = color,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

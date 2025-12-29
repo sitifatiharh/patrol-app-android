@@ -2,13 +2,14 @@ package com.rahma.findingpatrol.viewmodel.finding
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rahma.findingpatrol.data.repository.FindingRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
@@ -25,7 +26,7 @@ class CreateFindingViewModel(
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
-    
+
     private val _createdFindingId = MutableStateFlow<Int?>(null)
     val createdFindingId: StateFlow<Int?> = _createdFindingId
 
@@ -45,147 +46,135 @@ class CreateFindingViewModel(
         priorityId: Int?,
         riskLevelId: Int?,
         findingTypeId: Int?,
-        categoryId: Int?,
         countermeasureSuggestion: String?,
         imageUris: List<Uri>
     ) {
-        submitFinding(
-            context, 
-            isUpdate = false, 
-            id = 0, 
-            finding, area, patrolId, picId, priorityId, riskLevelId, findingTypeId, categoryId, 
-            countermeasureSuggestion, null, null, 
-            imageUris, 
-            emptyList()
-        )
+        executeAction(context) {
+            val findingPictures = imageUris.map { uri ->
+                uriToMultipart(context, uri, "findingPictures")
+            }
+            val response = repository.createFinding(
+                finding, area, patrolId, picId, priorityId, riskLevelId, findingTypeId, countermeasureSuggestion, findingPictures
+            )
+            _createdFindingId.value = response.data.findingId
+        }
     }
 
-    fun updateFinding(
+    fun patrolEditFinding(
         context: Context,
         id: Int,
-        finding: String = "",
-        area: String = "",
-        patrolId: Int = 0,
-        picId: Int? = null,
-        priorityId: Int? = null,
-        riskLevelId: Int? = null,
-        findingTypeId: Int? = null,
-        categoryId: Int? = null,
-        countermeasureSuggestion: String? = null,
-        countermeasure: String? = null, 
-        delayReason: String? = null, 
-        imageUris: List<Uri> = emptyList(),
-        newImprovedImageUris: List<Uri> = emptyList()
-    ) {
-        submitFinding(
-            context, 
-            isUpdate = true, 
-            id = id, 
-            finding, area, patrolId, picId, priorityId, riskLevelId, findingTypeId, categoryId, 
-            countermeasureSuggestion, countermeasure, delayReason, 
-            imageUris, 
-            newImprovedImageUris
-        )
-    }
-
-    private fun submitFinding(
-        context: Context,
-        isUpdate: Boolean,
-        id: Int,
-        finding: String,
-        area: String,
-        patrolId: Int,
+        finding: String?,
+        area: String?,
+        patrolId: Int?,
         picId: Int?,
         priorityId: Int?,
         riskLevelId: Int?,
         findingTypeId: Int?,
-        categoryId: Int?,
         countermeasureSuggestion: String?,
-        countermeasure: String?, 
-        delayReason: String?, 
-        imageUris: List<Uri>,
-        newImprovedImageUris: List<Uri>
+        imageUris: List<Uri>
     ) {
+        executeAction(context) {
+            val findingPictures = imageUris.map { uri -> uriToMultipart(context, uri, "findingPictures") }
+            repository.patrolEditFinding(
+                id, finding, area, patrolId, picId, priorityId, riskLevelId, findingTypeId, countermeasureSuggestion, findingPictures
+            )
+            _createdFindingId.value = id
+        }
+    }
+
+    fun assignPIC(
+        context: Context,
+        id: Int,
+        picId: Int?,
+        patrolId: Int?,
+        finding: String?,
+        area: String?,
+        priorityId: Int?,
+        riskLevelId: Int?,
+        findingTypeId: Int?,
+        countermeasure: String?,
+        imageUris: List<Uri>
+    ) {
+        executeAction(context) {
+            val findingPictures = imageUris.map { uri -> uriToMultipart(context, uri, "findingPictures") }
+            repository.assignPIC(
+                id, picId, patrolId, finding, area, priorityId, riskLevelId, findingTypeId, countermeasure, findingPictures
+            )
+            _createdFindingId.value = id
+        }
+    }
+
+    fun updateFindingByPIC(
+        context: Context, id: Int, countermeasure: String, delayReason: String, imageUris: List<Uri>
+    ) {
+        executeAction(context) {
+            val improvedPictures = imageUris.map { uri -> uriToMultipart(context, uri, "improvedPictures") }
+            repository.updateFindingByPIC(id, countermeasure, delayReason, improvedPictures)
+            _createdFindingId.value = id
+        }
+    }
+
+    fun recheckFinding(
+        context: Context, id: Int, categoryId: Int?, picId: Int?, patrolId: Int?,
+        finding: String?, area: String?, priorityId: Int?, riskLevelId: Int?, findingTypeId: Int?,
+        countermeasure: String?, findingUris: List<Uri>, improvedUris: List<Uri>
+    ) {
+        executeAction(context) {
+            val findingPictures = findingUris.map { uri -> uriToMultipart(context, uri, "findingPictures") }
+            val improvedPictures = improvedUris.map { uri -> uriToMultipart(context, uri, "improvedPictures") }
+            repository.recheckFinding(
+                id, categoryId, picId, patrolId, finding, area, priorityId, riskLevelId,
+                findingTypeId, countermeasure, findingPictures, improvedPictures
+            )
+            _createdFindingId.value = id
+        }
+    }
+
+    fun generalEditFinding(
+        context: Context, id: Int, categoryId: Int?, picId: Int?, patrolId: Int?,
+        finding: String?, area: String?, priorityId: Int?, riskLevelId: Int?, findingTypeId: Int?,
+        countermeasure: String?, findingUris: List<Uri>, improvedUris: List<Uri>
+    ) {
+        executeAction(context) {
+            val findingPictures = findingUris.map { uri -> uriToMultipart(context, uri, "findingPictures") }
+            val improvedPictures = improvedUris.map { uri -> uriToMultipart(context, uri, "improvedPictures") }
+            repository.generalEditFinding(
+                id, categoryId, picId, patrolId, finding, area, priorityId, riskLevelId,
+                findingTypeId, countermeasure, findingPictures, improvedPictures
+            )
+            _createdFindingId.value = id
+        }
+    }
+
+    private fun executeAction(context: Context, action: suspend () -> Unit) {
         viewModelScope.launch {
+            _loading.value = true
+            _error.value = null
             try {
-                _loading.value = true
-                _error.value = null
-
-                val multipartImages = mutableListOf<MultipartBody.Part>()
-
-                imageUris.forEachIndexed { index, uri ->
-                    val file = uriToFile(context, uri)
-                    multipartImages.add(
-                        MultipartBody.Part.createFormData(
-                            name = "findingPictures",
-                            filename = "finding_$index.jpg",
-                            body = file.asRequestBody("image/*".toMediaType())
-                        )
-                    )
-                }
-
-                newImprovedImageUris.forEachIndexed { index, uri ->
-                    val file = uriToFile(context, uri)
-                    multipartImages.add(
-                        MultipartBody.Part.createFormData(
-                            name = "improvedPictures",
-                            filename = "improved_$index.jpg",
-                            body = file.asRequestBody("image/*".toMediaType())
-                        )
-                    )
-                }
-
-                if (isUpdate) {
-                    repository.updateFinding(
-                        id = id,
-                        finding = finding,
-                        area = area,
-                        patrolId = patrolId,
-                        picId = picId,
-                        priorityId = priorityId,
-                        riskLevelId = riskLevelId,
-                        findingTypeId = findingTypeId,
-                        categoryId = categoryId,
-                        countermeasureSuggestion = countermeasureSuggestion,
-                        countermeasure = countermeasure,
-                        delayReason = delayReason,
-                        images = multipartImages
-                    )
-                    _createdFindingId.value = id
-                } else {
-                    val response = repository.createFinding(
-                        finding = finding,
-                        area = area,
-                        patrolId = patrolId,
-                        picId = picId,
-                        priorityId = priorityId,
-                        riskLevelId = riskLevelId,
-                        findingTypeId = findingTypeId,
-                        categoryId = categoryId,
-                        countermeasureSuggestion = countermeasureSuggestion,
-                        countermeasure = countermeasure, // Added missing parameter
-                        delayReason = delayReason, // Added missing parameter
-                        images = multipartImages
-                    )
-                    _createdFindingId.value = response.data.findingId
-                }
-
+                action()
                 _success.value = true
-                _loading.value = false
-
             } catch (e: Exception) {
+                Log.e("CreateFindingVM", "Action failed", e)
+                _error.value = e.message ?: "An unknown error occurred"
+            } finally {
                 _loading.value = false
-                _error.value = e.message
             }
         }
     }
 
+    private fun uriToMultipart(context: Context, uri: Uri, partName: String): MultipartBody.Part {
+        val file = uriToFile(context, uri)
+        val requestBody = file.asRequestBody("image/*".toMediaTypeOrNull())
+        return MultipartBody.Part.createFormData(partName, file.name, requestBody)
+    }
+
     private fun uriToFile(context: Context, uri: Uri): File {
         val inputStream = context.contentResolver.openInputStream(uri)
-        val tempFile = File.createTempFile("finding_", ".jpg", context.cacheDir)
-        tempFile.outputStream().use { output ->
-            inputStream?.copyTo(output)
-        }
-        return tempFile
+            ?: throw IllegalStateException("Can't open input stream from URI: $uri")
+        val fileName = "upload_${System.currentTimeMillis()}.jpg"
+        val file = File(context.cacheDir, fileName)
+        file.outputStream().use { output -> inputStream.copyTo(output) }
+        inputStream.close()
+        return file
     }
 }

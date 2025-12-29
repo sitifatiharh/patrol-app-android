@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,9 +32,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -61,9 +60,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.rahma.findingpatrol.data.model.finding.FindingsById
 import com.rahma.findingpatrol.util.fixImageUrl
 import com.rahma.findingpatrol.viewmodel.finding.FindingDetailState
 import com.rahma.findingpatrol.viewmodel.finding.FindingDetailViewModel
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -80,9 +83,53 @@ fun FindingDetailScreen(
     onNavigateToPatrolEdit: (Int) -> Unit
 ) {
     val state by viewModel.state.collectAsState()
+    
 
     LaunchedEffect(findingId) {
         viewModel.getFindingDetail(findingId)
+    }
+
+    val (showFab, fabText, onFabClick) = when (val currentState = state) {
+        is FindingDetailState.Success -> {
+            val data = currentState.data
+            val status = data.statusName.uppercase()
+            val isCreator = data.userId == currentUserId
+            val isPic = data.picId == sectionId
+
+            when (userMode) {
+                "patrol" -> {
+                    if (status == "OPEN" && isCreator) {
+                        Triple(true, "Edit Temuan") { onNavigateToPatrolEdit(data.findingId) }
+                    } else {
+                        Triple(false, "", {})
+                    }
+                }
+                "pic" -> {
+                    if ((status == "ASSIGNED" || status == "READY FOR RECHECK") && isPic) {
+                        val text = if (status == "ASSIGNED") "Kerjakan Temuan" else "Edit Perbaikan"
+                        Triple(true, text) { onNavigateToResolve(data.findingId) }
+                    } else {
+                        Triple(false, "", {})
+                    }
+                }
+                "improvement" -> {
+                    val text = when (status) {
+                        "OPEN" -> "Tugaskan PIC"
+                        "ASSIGNED" -> "Edit Penugasan PIC"
+                        "READY FOR RECHECK" -> "Recheck Temuan"
+                        "CLOSED" -> "Edit Finding"
+                        else -> ""
+                    }
+                    if (text.isNotEmpty()) {
+                        Triple(true, text) { onNavigateToImprovementAction(data.findingId) }
+                    } else {
+                        Triple(false, "", {})
+                    }
+                }
+                else -> Triple(false, "", {})
+            }
+        }
+        else -> Triple(false, "", {}) // Not success state, don't show FAB
     }
 
     Scaffold(
@@ -103,15 +150,28 @@ fun FindingDetailScreen(
                     )
                 }
             )
+        },
+        floatingActionButton = {
+            if (showFab) {
+                ExtendedFloatingActionButton(
+                    onClick = onFabClick,
+                    icon = { Icon(Icons.Filled.Edit, "Edit") },
+                    text = { Text(text = fabText, fontWeight = FontWeight.Bold) },
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
         }
     ) { padding ->
-        Box(modifier = Modifier
-            .padding(padding)
-            .fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+        ) {
             when (val currentState = state) {
                 is FindingDetailState.Loading -> {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
+
                 is FindingDetailState.Error -> {
                     Text(
                         text = currentState.message,
@@ -119,42 +179,9 @@ fun FindingDetailScreen(
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
+
                 is FindingDetailState.Success -> {
                     val data = currentState.data
-                    val status = data.statusName.uppercase()
-                    val isCreator = data.patrolCreatorId == currentUserId
-
-                    // Determine editability based on userMode and status
-                    val canEdit = when (userMode) {
-                        "patrol" -> isCreator && status == "OPEN"
-                        "pic" -> status == "ASSIGNED" || status == "READY FOR RECHECK"
-                        "improvement" -> status == "OPEN" || status == "ASSIGNED" || status == "READY FOR RECHECK" || status == "CLOSED"
-                        else -> false
-                    }
-
-                    val showEditButton = canEdit
-
-                    val editButtonText = when (userMode) {
-                        "patrol" -> "Edit Temuan"
-                        "pic" -> if (status == "ASSIGNED") "Kerjakan Temuan" else "Edit Perbaikan"
-                        "improvement" -> when (status) {
-                            "OPEN" -> "Tugaskan PIC"
-                            "ASSIGNED" -> "Edit Tugas"
-                            "READY FOR RECHECK" -> "Tutup Temuan"
-                            "CLOSED" -> "Edit Temuan"
-                            else -> ""
-                        }
-                        else -> ""
-                    }
-
-                    val onEditClick = {
-                        when (userMode) {
-                            "patrol" -> onNavigateToPatrolEdit(data.findingId)
-                            "pic" -> onNavigateToResolve(data.findingId)
-                            "improvement" -> onNavigateToImprovementAction(data.findingId)
-                        }
-                    }
-
                     val beforeImages = data.images.filter { it.imageType == "finding" }.map { fixImageUrl(it.imageUrl) }
                     val afterImages = data.images.filter { it.imageType == "improved" }.map { fixImageUrl(it.imageUrl) }
 
@@ -193,18 +220,6 @@ fun FindingDetailScreen(
                                         fontSize = 12.sp,
                                         color = Color.Gray
                                     )
-                                }
-
-                                if (showEditButton) {
-                                    OutlinedButton(onClick = onEditClick) {
-                                        Icon(
-                                            Icons.Default.Edit,
-                                            contentDescription = null, // Decorative icon
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(editButtonText, fontWeight = FontWeight.Bold)
-                                    }
                                 }
                             }
 
@@ -264,6 +279,10 @@ fun FindingDetailScreen(
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                             }
+                        }
+
+                        item {
+                            TimelineCard(finding = data)
                         }
 
                         //Spacer for button
@@ -327,6 +346,7 @@ fun DetailSectionCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FullScreenImageViewer(images: List<String>, initialIndex: Int, onDismiss: () -> Unit) {
     val pagerState = rememberPagerState(initialPage = initialIndex) { images.size }
@@ -439,6 +459,111 @@ fun StyledChip(label: String, color: Color, textColor: Color) {
             contentAlignment = Alignment.Center
         ) {
             Text(text = label, color = textColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+private fun formatTimelineDate(dateString: String?): String {
+    if (dateString.isNullOrEmpty()) return ""
+    return try {
+        val odt = OffsetDateTime.parse(dateString)
+        val formatter = DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm", Locale("id", "ID"))
+        odt.format(formatter)
+    } catch (e: Exception) {
+        dateString // Fallback
+    }
+}
+
+@Composable
+private fun TimelineItem(
+    title: String,
+    date: String,
+    isLast: Boolean
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .background(Color(0xFF2E7D32), CircleShape)
+            )
+            if (!isLast) {
+                Box(
+                    modifier = Modifier
+                        .padding(vertical = 4.dp)
+                        .width(1.dp)
+                        .height(40.dp) // Fixed height line
+                        .background(Color.LightGray)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+
+        Column {
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+            )
+            Text(
+                text = date,
+                fontSize = 12.sp,
+                color = Color.Gray
+            )
+        }
+    }
+}
+
+@Composable
+fun TimelineCard(finding: FindingsById) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Flow Proses dan Timeline",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+                Text(
+                    text = "Lead Time: ${finding.ltDay} hari",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = Color.DarkGray
+                )
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+
+            val timelineEvents = remember(finding) {
+                listOfNotNull(
+                    "Ditemukan" to finding.findingDate,
+                    finding.assignedDate?.let { "Ditugaskan ke PIC" to it },
+                    finding.finishDate?.let { "Selesai Diperbaiki" to it },
+                    finding.recheckDate?.let { "Dicek Ulang & Ditutup" to it }
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                timelineEvents.forEachIndexed { index, (title, date) ->
+                    TimelineItem(
+                        title = title,
+                        date = formatTimelineDate(date),
+                        isLast = index == timelineEvents.lastIndex
+                    )
+                }
+            }
         }
     }
 }

@@ -4,54 +4,58 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
-import coil.compose.AsyncImage
-import com.rahma.findingpatrol.ui.metadata.FormRow
-import com.rahma.findingpatrol.ui.metadata.MetadataDropdown
+import com.rahma.findingpatrol.ui.components.DeleteConfirmationDialog
+import com.rahma.findingpatrol.ui.components.FormRow
+import com.rahma.findingpatrol.ui.components.FullScreenImageViewer
+import com.rahma.findingpatrol.ui.components.ImagePreviewGrid
+import com.rahma.findingpatrol.ui.components.ImageSourceSelectionDialog
+import com.rahma.findingpatrol.ui.components.MetadataDropdown
 import com.rahma.findingpatrol.util.fixImageUrl
 import com.rahma.findingpatrol.viewmodel.finding.CreateFindingViewModel
 import com.rahma.findingpatrol.viewmodel.finding.FindingDetailState
@@ -73,8 +77,8 @@ fun NewEditFindingScreen(
     val context = LocalContext.current
     val isEditMode = findingId != 0
     val scrollState = rememberScrollState()
+    val focusManager = LocalFocusManager.current
 
-    // --- State Variables ---
     var findingText by rememberSaveable { mutableStateOf("") }
     var areaText by rememberSaveable { mutableStateOf("") }
     var countermeasureText by rememberSaveable { mutableStateOf("") }
@@ -84,25 +88,19 @@ fun NewEditFindingScreen(
     var selectedPriorityId by rememberSaveable { mutableStateOf<Int?>(null) }
     var selectedRiskLevelId by rememberSaveable { mutableStateOf<Int?>(null) }
     var selectedFindingTypeId by rememberSaveable { mutableStateOf<Int?>(null) }
-    var selectedCategoryId by rememberSaveable { mutableStateOf<Int?>(null) }
 
-    // --- Image States ---
     var selectedImageUris by rememberSaveable { mutableStateOf<List<Uri>>(emptyList()) }
     var existingImages by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
 
-    // --- UI State ---
     var patrolExpanded by remember { mutableStateOf(false) }
     var picExpanded by remember { mutableStateOf(false) }
     var priorityExpanded by remember { mutableStateOf(false) }
     var riskExpanded by remember { mutableStateOf(false) }
     var typeExpanded by remember { mutableStateOf(false) }
-    var categoryExpanded by remember { mutableStateOf(false) }
     var showImageSourceDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf<Any?>(null) }
     var showImageViewer by remember { mutableStateOf<Pair<List<Any>, Int>?>(null) }
 
-
-    // --- Metadata & Pre-fill Logic ---
     val metadataState by metadataViewModel.metadataState.collectAsState()
     val metadataData = (metadataState as? MetadataState.Success)?.data
     val patrols = metadataData?.patrol ?: emptyList()
@@ -110,16 +108,13 @@ fun NewEditFindingScreen(
     val priorities = metadataData?.priority ?: emptyList()
     val risks = metadataData?.riskLevel ?: emptyList()
     val types = metadataData?.findingType ?: emptyList()
-    val categories = metadataData?.category ?: emptyList()
 
     val selectedPatrol = patrols.find { it.patrolId == selectedPatrolId }
     val selectedPic = pics.find { it.sectionId == selectedPicId }
     val selectedPriority = priorities.find { it.priorityId == selectedPriorityId }
     val selectedRiskLevel = risks.find { it.riskLevelId == selectedRiskLevelId }
     val selectedFindingType = types.find { it.findingTypeId == selectedFindingTypeId }
-    val selectedCategory = categories.find { it.categoryId == selectedCategoryId }
 
-    // --- Image Launchers ---
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents(),
         onResult = { uris ->
@@ -150,7 +145,6 @@ fun NewEditFindingScreen(
         }
     }
 
-    // --- Data Loading & Pre-filling ---
     LaunchedEffect(Unit) {
         if (!isEditMode) viewModel.resetState()
         metadataViewModel.loadMetadata()
@@ -169,14 +163,12 @@ fun NewEditFindingScreen(
             if (selectedPriorityId == null) selectedPriorityId = priorities.find { it.priorityName == detail.priorityName }?.priorityId
             if (selectedRiskLevelId == null) selectedRiskLevelId = risks.find { it.riskLevel == detail.riskLevelName }?.riskLevelId
             if (selectedFindingTypeId == null) selectedFindingTypeId = types.find { it.typeName == detail.findingTypeName }?.findingTypeId
-            if (selectedCategoryId == null) selectedCategoryId = categories.find { it.categoryName == detail.categoryName }?.categoryId
             if (existingImages.isEmpty()) {
                 existingImages = detail.images.filter { it.imageType == "finding" }.map { fixImageUrl(it.imageUrl) }
             }
         }
     }
 
-    // --- Submission Logic & Side Effects ---
     val loading by viewModel.loading.collectAsState()
     val success by viewModel.success.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -197,10 +189,9 @@ fun NewEditFindingScreen(
     }
 
     LaunchedEffect(error) {
-        error?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+        error?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
 
-    // --- Dialogs ---
     if (showImageSourceDialog) {
         ImageSourceSelectionDialog(
             onDismiss = { showImageSourceDialog = false },
@@ -218,11 +209,21 @@ fun NewEditFindingScreen(
     if (showDeleteDialog != null) {
         DeleteConfirmationDialog(
             onConfirm = {
-                when (val image = showDeleteDialog) {
-                    is Uri -> selectedImageUris = selectedImageUris - image
-                    is String -> existingImages = existingImages - image
+                val imageToDelete = showDeleteDialog
+                when (imageToDelete) {
+                    is Uri -> selectedImageUris = selectedImageUris.filter { it != imageToDelete }
+                    is String -> existingImages = existingImages.filter { it != imageToDelete }
                 }
                 showDeleteDialog = null
+                showImageViewer?.let { (currentImages, currentIndex) ->
+                    val updatedImages = currentImages.filter { it != imageToDelete }
+                    if (updatedImages.isEmpty()) {
+                        showImageViewer = null
+                    } else {
+                        val newIndex = (currentIndex).coerceAtMost(updatedImages.size - 1)
+                        showImageViewer = updatedImages to newIndex
+                    }
+                }
             },
             onDismiss = { showDeleteDialog = null }
         )
@@ -233,371 +234,232 @@ fun NewEditFindingScreen(
             images = images,
             initialIndex = initialIndex,
             onDismiss = { showImageViewer = null },
-            onDelete = { image ->
-                showDeleteDialog = image
-                // To reflect deletion in the viewer immediately, we also need to update the list
-                val updatedImages = images.filter { it != image }
-                if (updatedImages.isEmpty()) {
-                    showImageViewer = null
-                } else {
-                    showImageViewer = updatedImages to 0 // Reset to first image
-                }
-            }
+            onDelete = { image -> showDeleteDialog = image },
+            onIndexChanged = { newIndex -> showImageViewer = images to newIndex }
         )
     }
-
 
     Scaffold(
         containerColor = Color(0xFFF5F5F5),
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(if (isEditMode) "Edit Temuan" else "Buat Temuan Baru") },
+                title = { Text(if (isEditMode) "Form Edit Temuan" else "Form Finding Patrol", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
-        },
-        bottomBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFF5F5F5))
-                    .padding(horizontal = 16.dp, vertical = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Button(
-                    onClick = onNavigateBack,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE0E0E0), contentColor = Color.Black),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp)
-                ) {
-                    Text("Batal", fontSize = 19.sp)
-                }
-                Button(
-                    onClick = {
-                        val cleanFinding = findingText.trim()
-                        val cleanArea = areaText.trim()
-                        val cleanCountermeasure = countermeasureText.trim().replace(Regex("\n+"), "\n")
-
-                        if (cleanFinding.isBlank() || cleanArea.isBlank() || selectedPatrolId == null || (selectedImageUris.isEmpty() && existingImages.isEmpty())) {
-                            Toast.makeText(context, "Harap isi semua kolom bertanda *", Toast.LENGTH_SHORT).show()
-                        } else {
-                            if (isEditMode) {
-                                viewModel.updateFinding(
-                                    context = context, id = findingId, finding = cleanFinding, area = cleanArea, patrolId = selectedPatrolId!!, picId = selectedPicId, priorityId = selectedPriorityId,
-                                    riskLevelId = selectedRiskLevelId, findingTypeId = selectedFindingTypeId, categoryId = selectedCategoryId, countermeasureSuggestion = cleanCountermeasure, imageUris = selectedImageUris
-                                )
-                            } else {
-                                viewModel.createFinding(
-                                    context = context, finding = cleanFinding, area = cleanArea, patrolId = selectedPatrolId!!, picId = selectedPicId, priorityId = selectedPriorityId,
-                                    riskLevelId = selectedRiskLevelId, findingTypeId = selectedFindingTypeId, categoryId = selectedCategoryId, countermeasureSuggestion = cleanCountermeasure, imageUris = selectedImageUris
-                                )
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD7E8CD), contentColor = Color.Black),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp),
-                    enabled = !loading
-                ) {
-                    if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp)) else Text(if (isEditMode) "Update" else "Submit", fontSize = 19.sp)
-                }
-            }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .padding(paddingValues)
-                .fillMaxSize()
-                .padding(horizontal = 16.dp)
-                .verticalScroll(scrollState)
-        ) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = if (isEditMode) "Edit Finding Patrol" else "Form Finding Patrol",
-                fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color.Black
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-
-            val mandatory = buildAnnotatedString {
-                append("*")
-                addStyle(style = SpanStyle(color = Color.Red), start = 0, end = 1)
-                append(" WAJIB DIISI")
+        if (metadataState is MetadataState.Loading || (isEditMode && detailState is FindingDetailState.Loading)) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
             }
-            Text(text = mandatory, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        } else {
+            Column(
+                modifier = Modifier
+                    .padding(paddingValues)
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 16.dp)
+            ) {
+                Spacer(Modifier.height(16.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
+                FormRow(
+                    label = "Patrol",
+                    isMandatory = true
+                ) {
+                    MetadataDropdown(
+                        expanded = patrolExpanded,
+                        onExpandedChange = { patrolExpanded = it },
+                        selectedOption = selectedPatrol?.patrolName ?: "Pilih Patrol",
+                        options = patrols.map { it.patrolName },
+                        onOptionSelected = { selected ->
+                            selectedPatrolId = patrols.find { it.patrolName == selected }?.patrolId
+                            patrolExpanded = false
+                        }
+                    )
+                }
 
-            FormRow("Patrol *", { MetadataDropdown("Pilih Patrol", patrols, selectedPatrol, { selectedPatrolId = it.patrolId }, { it.patrolName }, patrolExpanded, { patrolExpanded = it }) })
-            FormRow("Finding *", { OutlinedTextField(value = findingText, onValueChange = { findingText = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Deskripsi temuan...", fontSize = 17.sp) }, singleLine = true, colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = Color.Gray, focusedBorderColor = Color.Black), textStyle = TextStyle(fontSize = 17.sp)) })
-            FormRow("Area *", { OutlinedTextField(value = areaText, onValueChange = { areaText = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Lokasi area...", fontSize = 17.sp) }, singleLine = true, colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = Color.Gray, focusedBorderColor = Color.Black), textStyle = TextStyle(fontSize = 17.sp)) })
-
-            FindingFormImagePicker(
-                label = "Finding Pictures *",
-                imageUris = selectedImageUris,
-                existingImageUrls = existingImages,
-                onAddImageClick = { showImageSourceDialog = true },
-                onRemoveUri = { uri -> showDeleteDialog = uri },
-                onRemoveUrl = { url -> showDeleteDialog = url },
-                onImageClick = { allImages, index -> showImageViewer = allImages to index }
-            )
-
-            FormRow("Countermeasure Suggestion", {
-                val keyboardController = LocalSoftwareKeyboardController.current
-                val focusManager = LocalFocusManager.current
-                Box(modifier = Modifier.fillMaxWidth()) {
+                FormRow(label = "Finding", isMandatory = true) {
                     OutlinedTextField(
-                        value = countermeasureText, onValueChange = { countermeasureText = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Saran perbaikan...", fontSize = 17.sp) },
-                        keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Default), keyboardActions = KeyboardActions.Default,
-                        colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = Color.Gray, focusedBorderColor = Color.Black), textStyle = TextStyle(fontSize = 17.sp)
+                        value = findingText,
+                        onValueChange = { findingText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Deskripsi temuan") },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.clearFocus() })
                     )
-                    IconButton(onClick = { keyboardController?.hide(); focusManager.clearFocus() }, modifier = Modifier.align(Alignment.BottomEnd)) {
-                        Icon(Icons.Default.Check, contentDescription = "Done", tint = Color.Gray)
-                    }
                 }
-            })
 
-            FormRow("PIC", { MetadataDropdown("Pilih PIC", pics, selectedPic, { selectedPicId = it.sectionId }, { it.sectionName }, picExpanded, { picExpanded = it }) })
-            FormRow("Priority", { MetadataDropdown("Pilih Prioritas", priorities, selectedPriority, { selectedPriorityId = it.priorityId }, { it.priorityName }, priorityExpanded, { priorityExpanded = it }) })
-            FormRow("Risk Level", { MetadataDropdown("Pilih Risiko", risks, selectedRiskLevel, { selectedRiskLevelId = it.riskLevelId }, { it.riskLevel }, riskExpanded, { riskExpanded = it }) })
-            FormRow("Type", { MetadataDropdown("Pilih Tipe", types, selectedFindingType, { selectedFindingTypeId = it.findingTypeId }, { it.typeName }, typeExpanded, { typeExpanded = it }) })
-
-            val showCategory = selectedFindingType?.typeName?.equals("Abnormal", ignoreCase = true) == true
-            if (showCategory) {
-                FormRow("Category", { MetadataDropdown("Pilih Kategori", categories, selectedCategory, { selectedCategoryId = it.categoryId }, { it.categoryName }, categoryExpanded, { categoryExpanded = it }) })
-            }
-            Spacer(modifier = Modifier.height(32.dp))
-        }
-    }
-}
-
-@Composable
-fun FindingFormImagePicker(
-    label: String,
-    imageUris: List<Uri>,
-    existingImageUrls: List<String>,
-    onAddImageClick: () -> Unit,
-    onRemoveUri: (Uri) -> Unit,
-    onRemoveUrl: (String) -> Unit,
-    onImageClick: (List<Any>, Int) -> Unit
-) {
-    Column(modifier = Modifier
-        .fillMaxWidth()
-        .padding(vertical = 8.dp)) {
-        val annotatedLabel = buildAnnotatedString {
-            append(label)
-            val starIndex = label.indexOf('*')
-            if (starIndex != -1) {
-                addStyle(
-                    style = SpanStyle(color = Color.Red),
-                    start = starIndex,
-                    end = starIndex + 1
-                )
-            }
-        }
-        Text(text = annotatedLabel, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
-
-        val allImages = existingImageUrls.map<String, Any> { it } + imageUris.map<Uri, Any> { it }
-
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (allImages.size < 10) {
-                item {
-                    AddImageButton(onClick = onAddImageClick)
-                }
-            }
-            itemsIndexed(allImages) { index, image ->
-                Box {
-                    AsyncImage(
-                        model = image,
-                        contentDescription = "Selected Image",
-                        modifier = Modifier
-                            .size(100.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onImageClick(allImages, index) },
-                        contentScale = ContentScale.Crop
+                FormRow(label = "Area", isMandatory = true) {
+                    OutlinedTextField(
+                        value = areaText,
+                        onValueChange = { areaText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Detail lokasi, contoh: Area Boiler A") },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.clearFocus() })
                     )
-                    IconButton(
-                        onClick = {
-                            when (image) {
-                                is Uri -> onRemoveUri(image)
-                                is String -> onRemoveUrl(image)
-                            }
+                }
+
+                FormRow(label = "Finding Pictures", isMandatory = true) {
+                    ImagePreviewGrid(
+                        existingImages = existingImages,
+                        selectedImageUris = selectedImageUris,
+                        onAddImageClick = { showImageSourceDialog = true },
+                        onImageClick = { images, index -> showImageViewer = images to index },
+                        onDeleteClick = { showDeleteDialog = it }
+                    )
+                }
+
+                Divider(modifier = Modifier.padding(vertical = 16.dp))
+
+                FormRow(label = "PIC") {
+                    MetadataDropdown(
+                        expanded = picExpanded,
+                        onExpandedChange = { picExpanded = it },
+                        selectedOption = selectedPic?.sectionName ?: "Pilih PIC",
+                        options = pics.map { it.sectionName },
+                        onOptionSelected = { selected ->
+                            selectedPicId = pics.find { it.sectionName == selected }?.sectionId
+                            picExpanded = false
                         },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(4.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                            .size(24.dp)
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = "Remove Image", tint = Color.White)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun AddImageButton(onClick: () -> Unit) {
-    val stroke = Stroke(width = 3f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f))
-    Box(
-        modifier = Modifier
-            .size(100.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color.White)
-            .clickable(onClick = onClick)
-            .padding(1.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawRoundRect(
-                color = Color.Gray,
-                style = stroke
-            )
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Default.AddAPhoto, contentDescription = "Add Image", tint = Color.Gray)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(text = "Tambah", color = Color.Gray, fontSize = 12.sp, textAlign = TextAlign.Center)
-        }
-    }
-}
-
-@Composable
-fun ImageSourceSelectionDialog(
-    onDismiss: () -> Unit,
-    onCameraClick: () -> Unit,
-    onGalleryClick: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Pilih Sumber Gambar") },
-        text = { Text("Ambil gambar dari kamera atau pilih dari galeri.") },
-        confirmButton = {
-            TextButton(onClick = onCameraClick) { Text("Kamera") }
-        },
-        dismissButton = {
-            TextButton(onClick = onGalleryClick) { Text("Galeri") }
-        }
-    )
-}
-
-@Composable
-fun DeleteConfirmationDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Hapus Gambar") },
-        text = { Text("Anda yakin ingin menghapus gambar ini?") },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
-            ) { Text("Hapus") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Batal") }
-        }
-    )
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun FullScreenImageViewer(
-    images: List<Any>,
-    initialIndex: Int,
-    onDismiss: () -> Unit,
-    onDelete: (Any) -> Unit
-) {
-    val pagerState = rememberPagerState(initialPage = initialIndex) { images.size }
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(modifier = Modifier.fillMaxSize(), color = Color.Black.copy(alpha = 0.9f)) {
-            Box(contentAlignment = Alignment.Center) {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.fillMaxSize()
-                ) { page ->
-                    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
-                        scale = (scale * zoomChange).coerceIn(1f, 5f)
-                        val newOffsetX = offset.x + panChange.x * scale
-                        val newOffsetY = offset.y + panChange.y * scale
-                        // Simple bounds to prevent panning too far
-                        val maxX = (scale - 1) * 500
-                        val maxY = (scale - 1) * 800
-                        offset = Offset(newOffsetX.coerceIn(-maxX, maxX), newOffsetY.coerceIn(-maxY, maxY))
-                    }
-
-                    AsyncImage(
-                        model = images[page],
-                        contentDescription = "Gambar Penuh ${page + 1}",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer(
-                                scaleX = scale,
-                                scaleY = scale,
-                                translationX = offset.x,
-                                translationY = offset.y
-                            )
-                            .transformable(state = transformableState)
-                            .clickable {
-                                // Reset zoom and pan on simple click
-                                scale = 1f
-                                offset = Offset.Zero
-                            }
+                        clearSelectionEnabled = true,
+                        onClearSelection = { selectedPicId = null }
                     )
                 }
 
-                // Top bar with Delete and Close buttons
+                FormRow(label = "Priority") {
+                    MetadataDropdown(
+                        expanded = priorityExpanded,
+                        onExpandedChange = { priorityExpanded = it },
+                        selectedOption = selectedPriority?.priorityName ?: "Pilih Prioritas",
+                        options = priorities.map { it.priorityName },
+                        onOptionSelected = { selected ->
+                            selectedPriorityId = priorities.find { it.priorityName == selected }?.priorityId
+                            priorityExpanded = false
+                        },
+                        clearSelectionEnabled = true,
+                        onClearSelection = { selectedPriorityId = null }
+                    )
+                }
+
+                FormRow(label = "Risk Level") {
+                    MetadataDropdown(
+                        expanded = riskExpanded,
+                        onExpandedChange = { riskExpanded = it },
+                        selectedOption = selectedRiskLevel?.riskLevel ?: "Pilih Tingkat Risiko",
+                        options = risks.map { it.riskLevel },
+                        onOptionSelected = { selected ->
+                            selectedRiskLevelId = risks.find { it.riskLevel == selected }?.riskLevelId
+                            riskExpanded = false
+                        },
+                        clearSelectionEnabled = true,
+                        onClearSelection = { selectedRiskLevelId = null }
+                    )
+                }
+
+                FormRow(label = "Finding Type") {
+                    MetadataDropdown(
+                        expanded = typeExpanded,
+                        onExpandedChange = { typeExpanded = it },
+                        selectedOption = selectedFindingType?.typeName ?: "Pilih Tipe Temuan",
+                        options = types.map { it.typeName },
+                        onOptionSelected = { selected ->
+                            selectedFindingTypeId = types.find { it.typeName == selected }?.findingTypeId
+                            typeExpanded = false
+                        },
+                        clearSelectionEnabled = true,
+                        onClearSelection = { selectedFindingTypeId = null }
+                    )
+                }
+
+                FormRow(label = "Countermeasure Suggestion") {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = countermeasureText,
+                            onValueChange = { countermeasureText = it },
+                            modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 120.dp),
+                            placeholder = { Text("Usulan tindakan perbaikan") },
+                        )
+                        IconButton(
+                            onClick = { focusManager.clearFocus() },
+                            modifier = Modifier.align(Alignment.BottomEnd)
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = "Done")
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(32.dp))
+
                 Row(
-                    Modifier
+                    modifier = Modifier
                         .fillMaxWidth()
-                        .align(Alignment.TopCenter)
-                        .background(Color.Black.copy(alpha = 0.3f))
-                        .padding(horizontal = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Tutup", tint = Color.White)
+                    Button(
+                        onClick = onNavigateBack,
+                        colors = ButtonDefaults.outlinedButtonColors(),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Batal")
                     }
-                    IconButton(onClick = { onDelete(images[pagerState.currentPage]) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Hapus", tint = Color.White)
+
+                    val isFormValid = selectedPatrolId != null &&
+                            findingText.isNotBlank() &&
+                            areaText.isNotBlank() &&
+                            (existingImages.isNotEmpty() || selectedImageUris.isNotEmpty())
+
+                    Button(
+                        onClick = {
+                            focusManager.clearFocus()
+                            if (isEditMode) {
+                                viewModel.patrolEditFinding(
+                                    context = context,
+                                    id = findingId,
+                                    patrolId = selectedPatrolId,
+                                    finding = findingText,
+                                    area = areaText,
+                                    picId = selectedPicId,
+                                    priorityId = selectedPriorityId,
+                                    riskLevelId = selectedRiskLevelId,
+                                    findingTypeId = selectedFindingTypeId,
+                                    countermeasureSuggestion = if (countermeasureText.isNotBlank()) countermeasureText else null,
+                                    imageUris = selectedImageUris
+                                )
+                            } else {
+                                selectedPatrolId?.let {
+                                    viewModel.createFinding(
+                                        context = context,
+                                        patrolId = it,
+                                        finding = findingText,
+                                        area = areaText,
+                                        picId = selectedPicId,
+                                        priorityId = selectedPriorityId,
+                                        riskLevelId = selectedRiskLevelId,
+                                        findingTypeId = selectedFindingTypeId,
+                                        countermeasureSuggestion = if (countermeasureText.isNotBlank()) countermeasureText else null,
+                                        imageUris = selectedImageUris
+                                    )
+                                }
+                            }
+                        },
+                        enabled = isFormValid && !loading,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (loading) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
+                        } else {
+                            Text(if (isEditMode) "Edit Temuan" else "Submit")
+                        }
                     }
                 }
-
-
-                // Indicator
-                Row(
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 24.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-
-                ) {
-                    repeat(images.size) { iteration ->
-                        val color = if (pagerState.currentPage == iteration) Color.White else Color.Gray
-                        Box(
-                            modifier = Modifier
-                                .padding(4.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                                .size(10.dp)
-                        )
-                    }
-                }
+                Spacer(Modifier.height(80.dp))
             }
         }
     }

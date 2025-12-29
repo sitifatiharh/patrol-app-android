@@ -1,7 +1,7 @@
 package com.rahma.findingpatrol.ui.finding
 
 import android.annotation.SuppressLint
-import com.rahma.findingpatrol.data.model.finding.Finding
+import com.rahma.findingpatrol.data.model.finding.AllFinding
 import com.rahma.findingpatrol.data.remote.ApiConfig
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -21,17 +21,17 @@ data class FindingCardData(
 )
 
 @SuppressLint("NewApi")
-fun Finding.toCardData(): FindingCardData {
+fun AllFinding.toCardData(): FindingCardData {
     // Formatter untuk parsing input dari API (ISO 8601: 2025-01-25T00:00:00.000Z)
     val inputFormatter = DateTimeFormatter.ISO_DATE_TIME
-    
+
     // Formatter untuk output ke UI (contoh: 25 Feb 2025)
     val outputFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
 
     fun fixImageUrl(localPath: String?): String {
         if (localPath.isNullOrEmpty()) return ""
         if (localPath.startsWith("http")) return localPath
-        
+
         // Normalize path and extract filename
         val normalized = localPath.replace("\\", "/")
         val filename = normalized.substringAfterLast("/")
@@ -41,7 +41,7 @@ fun Finding.toCardData(): FindingCardData {
             normalized.contains("/improved/", ignoreCase = true) -> "improved"
             else -> "findings"
         }
-        
+
         // Rebuild the correct, public-facing URL
         return "${ApiConfig.BASE_URL}/kaizenUploads/$folder/$filename"
     }
@@ -62,9 +62,9 @@ fun Finding.toCardData(): FindingCardData {
                 try {
                     val dueDateTime = LocalDateTime.parse(dueDate, inputFormatter).toLocalDate()
                     val today = LocalDate.now()
-                    
+
                     val formattedDate = dueDateTime.format(outputFormatter)
-                    
+
                     if (today.isAfter(dueDateTime)) {
                         "Overdue" to formattedDate
                     } else {
